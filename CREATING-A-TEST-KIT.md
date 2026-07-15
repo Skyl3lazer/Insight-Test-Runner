@@ -103,15 +103,15 @@ copied here.
       <Private>false</Private>
     </Reference>
     <Reference Include="TestRunner">
-      <HintPath>..\..\Test Runner\1.6\Assemblies\TestRunner.dll</HintPath>
+      <HintPath>..\..\Insight Test Runner\1.6\Assemblies\TestRunner.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 </Project>
 ```
 
-(The Insight mod's folder is `Test Runner` even though it displays as "Insight - Test Runner"; the
-DLL is `TestRunner.dll`.)
+(The Insight mod's folder is `Insight Test Runner`; the assembly/DLL is `TestRunner.dll` and the
+packageId is `Skyl3lazer.TestRunner`.)
 
 ---
 

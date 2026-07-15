@@ -22,7 +22,11 @@ namespace TestRunner
         private bool seeded = true;
         private readonly Dictionary<int, CheckResult> results = new Dictionary<int, CheckResult>();
         private readonly Dictionary<int, string> dumps = new Dictionary<int, string>();
-        private Vector2 pickerScroll;
+
+        // Per-suite names whose log has already been truncated this game launch. Static, so it resets
+        // when the assembly reloads (i.e. once per launch) - the log overwrites on the launch's first
+        // write and appends within the launch.
+        private static readonly HashSet<string> LogFreshThisLaunch = new HashSet<string>();
 
         public Window_TestRunner(Pawn pawn)
         {
@@ -328,8 +332,18 @@ namespace TestRunner
         {
             try
             {
-                string path = Path.Combine(OutputDirPath(), SafeName(suite?.Name ?? "unknown") + ".log");
-                File.AppendAllText(path, DateTime.Now.ToString("HH:mm:ss") + " " + line + "\n");
+                string key = SafeName(suite?.Name ?? "unknown");
+                string path = Path.Combine(OutputDirPath(), key + ".log");
+                string text = DateTime.Now.ToString("HH:mm:ss") + " " + line + "\n";
+
+                if (LogFreshThisLaunch.Add(key))
+                {
+                    File.WriteAllText(path, text); // first write this launch: start a clean file
+                }
+                else
+                {
+                    File.AppendAllText(path, text);
+                }
             }
             catch (Exception e)
             {

@@ -28,7 +28,7 @@ Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits
    - **Seeded RNG** makes random outcomes repeat run to run; turn it off to sample variance.
 4. Output lands in `%USERPROFILE%\AppData\LocalLow\Ludeon Studios\RimWorld by Ludeon Studios\Insight\`:
    - `<suite>.json` - latest run, structured (for tooling).
-   - `<suite>.log` - timestamped step narration (appended history).
+   - `<suite>.log` - timestamped step narration; overwrites on each game launch, appends within it.
    Genuine exceptions also surface in `Player.log`.
 
 ## Writing a test kit for your mod

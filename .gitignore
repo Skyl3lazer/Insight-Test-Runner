@@ -1,0 +1,24 @@
+# Build intermediates (the built DLL under 1.6/Assemblies IS committed so the mod runs when cloned)
+[Oo]bj/
+[Bb]in/
+Source/obj/
+Source/bin/
+
+# IDE / user files
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*_i.c
+*.pidb
+
+# Logs / temp
+*.log
+*.tmp
+*~
+
+# AI assistants
+.claude/
+.cursor/

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <DefineConstants>$(DefineConstants);v1_6</DefineConstants>
+    <NoWarn>$(NoWarn);CA1707;CA2211;CA1305;CA1016;CA1051</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4488-beta" />
+  </ItemGroup>
+</Project>

@@ -23,15 +23,15 @@ namespace TestRunner
         public static CheckResult Fail(string detail) => new CheckResult(false, detail);
     }
 
-    // A single manual step: an action driven on the target pawn, what to observe, and an optional
+    // A single manual step: an action driven against the context, what to observe, and an optional
     // self-check. Check == null means the step is human-judged only (UI/feel, or a manual note).
     public class TestStep
     {
         public readonly string Instruction;
-        public readonly Action<Pawn> Run;
-        public readonly Func<Pawn, CheckResult>? Check;
+        public readonly Action<TestContext> Run;
+        public readonly Func<TestContext, CheckResult>? Check;
 
-        public TestStep(string instruction, Action<Pawn> run, Func<Pawn, CheckResult>? check = null)
+        public TestStep(string instruction, Action<TestContext> run, Func<TestContext, CheckResult>? check = null)
         {
             Instruction = instruction;
             Run = run;
@@ -52,17 +52,19 @@ namespace TestRunner
         }
     }
 
-    // A mod's group of scripts. Describe supplies the per-mod state dump used in logs and the report;
-    // if null, dumps are blank (the runner still works).
+    // A mod's group of scripts. TargetKind decides what the runner asks you to select; Describe supplies
+    // the per-mod state dump for logs/reports (null => blank dumps).
     public class TestSuite
     {
         public readonly string Name;
+        public readonly TargetKind TargetKind;
         public readonly List<TestScript> Scripts;
-        public readonly Func<Pawn, string>? Describe;
+        public readonly Func<TestContext, string>? Describe;
 
-        public TestSuite(string name, List<TestScript> scripts, Func<Pawn, string>? describe = null)
+        public TestSuite(string name, TargetKind targetKind, List<TestScript> scripts, Func<TestContext, string>? describe = null)
         {
             Name = name;
+            TargetKind = targetKind;
             Scripts = scripts;
             Describe = describe;
         }
@@ -71,11 +73,11 @@ namespace TestRunner
     // Fluent builders. Consumers do `using static TestRunner.Test;` and write Do/Note/Check/Script.
     public static class Test
     {
-        public static TestStep Do(string instruction, Action<Pawn> op) => new TestStep(instruction, op);
+        public static TestStep Do(string instruction, Action<TestContext> op) => new TestStep(instruction, op);
 
-        public static TestStep Do(string instruction, Action<Pawn> op, Func<Pawn, CheckResult> check) => new TestStep(instruction, op, check);
+        public static TestStep Do(string instruction, Action<TestContext> op, Func<TestContext, CheckResult> check) => new TestStep(instruction, op, check);
 
-        public static TestStep Check(string instruction, Func<Pawn, CheckResult> check) => new TestStep(instruction, _ => { }, check);
+        public static TestStep Check(string instruction, Func<TestContext, CheckResult> check) => new TestStep(instruction, _ => { }, check);
 
         public static TestStep Note(string instruction) => new TestStep(instruction, _ => { });
 

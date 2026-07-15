@@ -10,14 +10,18 @@ A complete, self-contained recipe for building an Insight test kit for a RimWorl
 
 - A **test kit** is a *separate, dev-only mod* that depends on (a) the mod under test and (b)
   Insight - Test Runner. It ships nothing into the target mod, so the target mod stays release-clean.
-- The kit registers one or more **suites**. A `TestSuite` = a name + a list of scripts + an optional
-  `Describe(pawn)` delegate (a one-line state dump used in logs/reports).
+- The kit registers one or more **suites**. A `TestSuite` = a name + a **`TargetKind`** + a list of
+  scripts + an optional `Describe(TestContext)` delegate (a one-line state dump for logs/reports).
+- **`TargetKind`** = what the suite runs against: `None` (map-level; the script spawns/inspects what
+  it needs), `Pawn`, `Building`, `Item`, or `Cell`. It decides what the runner asks the tester to
+  click before running.
 - A **script** (`TestScript`) = a name + an ordered list of **steps**.
-- A **step** (`TestStep`) = an instruction string + an `Action<Pawn>` to run + an optional
-  `Func<Pawn, CheckResult>` self-check. No check => the step is human-judged (UI/feel, or a manual
-  prerequisite note).
+- A **step** (`TestStep`) = an instruction + an `Action<TestContext>` to run + an optional
+  `Func<TestContext, CheckResult>` self-check. No check => human-judged (UI/feel, or a manual note).
+- A **`TestContext`** is handed to every step: `Map` (always) plus the selected target for the kind -
+  `ctx.Pawn`, `ctx.Thing` (building/item), or `ctx.Cell`. A step reads the field for its suite's kind.
 - Insight discovers your suite automatically (you implement `ITestProvider`), shows it in the runner,
-  and drives the steps against a clicked pawn, writing `Insight\<suite>.json` + `.log`.
+  has the tester select the target, drives the steps, and writes `Insight\<suite>.json` + `.log`.
 
 Golden rule: **drive the target mod through its public API only.** If a capability you need is not
 public, add a thin public method to the target mod (or an ops class in the kit that calls existing
@@ -122,6 +126,7 @@ small, parameterized verbs that drive the target mod's public API and read its s
 these; it keeps scripts short and DRY, and it is the seam a future automated suite reuses.
 
 ```csharp
+using TestRunner;
 using Verse;
 using <Target>;                 // the target mod's namespace
 
@@ -135,9 +140,10 @@ namespace <Target>TestKit
         // Accessors: read state for checks.
         public static int SomeCount(Pawn p) => /* ... */ 0;
 
-        // Describe: the one-line dump shown in logs/report for each step.
-        public static string Describe(Pawn p) =>
-            p.LabelShort + ": someCount=" + SomeCount(p);
+        // Describe: one-line dump for logs/report. Reads the TestContext field for the suite's
+        // TargetKind (ctx.Pawn / ctx.Thing / ctx.Cell).
+        public static string Describe(TestContext ctx) =>
+            ctx.Pawn != null ? ctx.Pawn.LabelShort + ": someCount=" + SomeCount(ctx.Pawn) : "(none)";
     }
 }
 ```
@@ -162,20 +168,25 @@ namespace <Target>TestKit
     {
         public IEnumerable<TestSuite> GetSuites()
         {
-            yield return new TestSuite("<Target>", Scripts, <Target>Ops.Describe);
+            // Pick the TargetKind your scripts need: None / Pawn / Building / Item / Cell.
+            yield return new TestSuite("<Target>", TargetKind.Pawn, Scripts, <Target>Ops.Describe);
         }
 
         private static readonly List<TestScript> Scripts = new List<TestScript>
         {
             Script("01 First scenario",
-                Do("Set up: do the thing (amount 5)", p => <Target>Ops.DoTheThing(p, 5),
-                    p => Assert.Eq(<Target>Ops.SomeCount(p), 5, "someCount")),
-                Note("Look at the pawn's tab: confirm the widget shows 5 (human-judged)."),
-                Do("Reset / clean up", p => <Target>Ops.DoTheThing(p, 0))),
+                Do("Set up: do the thing (amount 5)", ctx => <Target>Ops.DoTheThing(ctx.Pawn, 5),
+                    ctx => Assert.Eq(<Target>Ops.SomeCount(ctx.Pawn), 5, "someCount")),
+                Note("Look at the target's tab: confirm the widget shows 5 (human-judged)."),
+                Do("Reset / clean up", ctx => <Target>Ops.DoTheThing(ctx.Pawn, 0))),
         };
     }
 }
 ```
+
+Steps receive the `TestContext`; read the field for your kind (`ctx.Pawn` / `ctx.Thing` / `ctx.Cell`).
+For a single-kind suite you can keep step bodies terse with a tiny adapter - see the Psyche kit's
+`DoP` / `CheckP`, which wrap `ctx.Pawn` so scripts read `p => ...`.
 
 ---
 
@@ -183,14 +194,19 @@ namespace <Target>TestKit
 
 All in namespace `TestRunner`.
 
+`TargetKind` (enum): `None`, `Pawn`, `Building`, `Item`, `Cell`.
+
+`TestContext` (handed to every step): `Map Map`, `TargetKind Kind`, `Pawn? Pawn`, `Thing? Thing`
+(building/item), `IntVec3 Cell`.
+
 Builders (`Test` static class):
-- `Do(string instruction, Action<Pawn> op)` - run an action; logs a dump.
-- `Do(string instruction, Action<Pawn> op, Func<Pawn,CheckResult> check)` - action + self-check.
-- `Check(string instruction, Func<Pawn,CheckResult> check)` - assertion only, no state change.
+- `Do(string instruction, Action<TestContext> op)` - run an action; logs a dump.
+- `Do(string instruction, Action<TestContext> op, Func<TestContext,CheckResult> check)` - + self-check.
+- `Check(string instruction, Func<TestContext,CheckResult> check)` - assertion only, no state change.
 - `Note(string instruction)` - human-judged only (UI/feel or a manual setup prerequisite).
 - `Script(string name, params TestStep[] steps)` - assemble a script.
 
-Combine multiple ops in one step with a lambda: `p => { OpA(p); OpB(p); }`.
+Combine multiple ops in one step with a lambda: `ctx => { OpA(ctx.Pawn); OpB(ctx.Pawn); }`.
 
 Assertions (`Assert` static class) - each returns a `CheckResult`:
 - `True(bool cond, string label)`
@@ -203,8 +219,8 @@ Assertions (`Assert` static class) - each returns a `CheckResult`:
 
 For custom logic a check returns `CheckResult.Ok("detail")` / `CheckResult.Fail("detail")` directly.
 
-`TestSuite(string name, List<TestScript> scripts, Func<Pawn,string>? describe = null)` - `describe`
-is the per-step state dump; pass `null` if you do not want dumps.
+`TestSuite(string name, TargetKind targetKind, List<TestScript> scripts, Func<TestContext,string>? describe = null)`
+- `describe` is the per-step state dump; pass `null` for no dumps.
 
 ---
 
@@ -219,9 +235,11 @@ Build in dependency order (each writes its DLL into its own `1.6\Assemblies`):
 If the copy step fails with "user-mapped section open", RimWorld is running and holding the old DLL -
 exit the game (or hot-reload) and rebuild.
 
-To run: enable target + Insight + kit (kit after both), dev mode on, **Testing -> Open test runner**,
-click a pawn, pick your suite's script, **Run all**. Read `Insight\<suite>.json` (and `.log`) in the
-LocalLow RimWorld folder, and the pawn's tab for the human-judged steps.
+To run: enable target + Insight + kit (kit after both), dev mode on, **Testing -> Open test runner**
+(a global action - no click needed to open). Pick your suite's script; if its `TargetKind` is not
+`None`, hit **Select target** and click the pawn/building/item/cell (the click is filtered to the
+kind); then **Run all**. Read `Insight\<suite>.json` (and `.log`) in the LocalLow RimWorld folder, and
+the target's tab for the human-judged steps.
 
 ---
 

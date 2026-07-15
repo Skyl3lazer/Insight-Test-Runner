@@ -2,20 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using RimWorld;
 using UnityEngine;
 using Verse;
 
 namespace TestRunner
 {
-    // Generic manual step runner. Bound to a clicked pawn; pick a suite's script, advance one step at
-    // a time (or Run all) and observe the pawn's real tab. Steps with a self-check show PASS/FAIL.
-    // Run all / Save report write TestResults.json to persistentDataPath for external reading.
+    // Generic manual step runner. Opened globally on the current map; pick a suite's script, select its
+    // target (per the suite's TargetKind), then advance one step at a time (or Run all) and observe the
+    // game. Steps with a self-check show PASS/FAIL. Run all / Save report write <suite>.json + .log to
+    // persistentDataPath/Insight for external reading.
     public class Window_TestRunner : Window
     {
         private const int BaseSeed = 1234567;
         private const string OutputDir = "Insight";
 
-        private readonly Pawn pawn;
+        private readonly Map map;
         private TestSuite? suite;
         private TestScript? script;
         private int cursor;
@@ -23,14 +25,18 @@ namespace TestRunner
         private readonly Dictionary<int, CheckResult> results = new Dictionary<int, CheckResult>();
         private readonly Dictionary<int, string> dumps = new Dictionary<int, string>();
 
+        private Pawn? targetPawn;
+        private Thing? targetThing;
+        private IntVec3 targetCell = IntVec3.Invalid;
+
         // Per-suite names whose log has already been truncated this game launch. Static, so it resets
         // when the assembly reloads (i.e. once per launch) - the log overwrites on the launch's first
         // write and appends within the launch.
         private static readonly HashSet<string> LogFreshThisLaunch = new HashSet<string>();
 
-        public Window_TestRunner(Pawn pawn)
+        public Window_TestRunner()
         {
-            this.pawn = pawn;
+            map = Find.CurrentMap;
             draggable = true;
             doCloseX = true;
             preventCameraMotion = false;
@@ -38,14 +44,14 @@ namespace TestRunner
             absorbInputAroundWindow = false;
         }
 
-        public override Vector2 InitialSize => new Vector2(580f, 620f);
+        public override Vector2 InitialSize => new Vector2(580f, 640f);
 
         public override void DoWindowContents(Rect inRect)
         {
             Listing_Standard list = new Listing_Standard();
             list.Begin(inRect);
 
-            list.Label("Target: " + (pawn?.LabelShortCap ?? "<null>"));
+            list.Label("Map: " + (map?.Parent?.LabelCap ?? "<none>"));
             list.GapLine();
 
             if (script == null || suite == null)
@@ -56,6 +62,13 @@ namespace TestRunner
             }
 
             list.Label("Suite: " + suite.Name + "   Script: " + script.Name);
+
+            list.Label("Target [" + suite.TargetKind + "]: " + TargetLabel());
+            if (suite.TargetKind != TargetKind.None && list.ButtonText("Select target"))
+            {
+                BeginSelectTarget();
+            }
+
             list.CheckboxLabeled("Seeded RNG (repeatable rolls)", ref seeded, "On: each step rolls with a fixed per-step seed, so random outcomes repeat run to run. Off: real RNG, to catch variance.");
             list.Gap(4f);
 
@@ -68,6 +81,14 @@ namespace TestRunner
             list.GapLine();
             list.Label(Summary());
 
+            bool hasTarget = HasTarget();
+            if (!hasTarget)
+            {
+                GUI.color = new Color(0.9f, 0.6f, 0.4f);
+                list.Label("Select a target to run.");
+                GUI.color = Color.white;
+            }
+
             Rect row = list.GetRect(32f);
             float w = (row.width - 20f) / 6f;
             bool atEnd = cursor >= script.Steps.Count;
@@ -77,13 +98,13 @@ namespace TestRunner
                 cursor--;
             }
 
-            if (Widgets.ButtonText(Col(row, w, 1), atEnd ? "Done" : "Run & Next") && !atEnd)
+            if (Widgets.ButtonText(Col(row, w, 1), atEnd ? "Done" : "Run & Next") && !atEnd && hasTarget)
             {
                 RunStep(cursor);
                 cursor++;
             }
 
-            if (Widgets.ButtonText(Col(row, w, 2), "Run all"))
+            if (Widgets.ButtonText(Col(row, w, 2), "Run all") && hasTarget)
             {
                 RunAll();
             }
@@ -127,12 +148,19 @@ namespace TestRunner
             {
                 list.Gap(2f);
                 GUI.color = new Color(0.8f, 0.85f, 1f);
-                list.Label(s.Name);
+                list.Label(s.Name + "  [" + s.TargetKind + "]");
                 GUI.color = Color.white;
                 foreach (TestScript sc in s.Scripts)
                 {
                     if (list.ButtonText("    " + sc.Name))
                     {
+                        if (suite != s)
+                        {
+                            targetPawn = null;
+                            targetThing = null;
+                            targetCell = IntVec3.Invalid;
+                        }
+
                         suite = s;
                         script = sc;
                         cursor = 0;
@@ -141,6 +169,81 @@ namespace TestRunner
                     }
                 }
             }
+        }
+
+        private void BeginSelectTarget()
+        {
+            if (suite == null || suite.TargetKind == TargetKind.None)
+            {
+                return;
+            }
+
+            TargetKind kind = suite.TargetKind;
+            Find.Targeter.BeginTargeting(ParamsFor(kind), delegate (LocalTargetInfo t)
+            {
+                switch (kind)
+                {
+                    case TargetKind.Pawn: targetPawn = t.Pawn; break;
+                    case TargetKind.Building:
+                    case TargetKind.Item: targetThing = t.Thing; break;
+                    case TargetKind.Cell: targetCell = t.Cell; break;
+                }
+            });
+        }
+
+        private static TargetingParameters ParamsFor(TargetKind k)
+        {
+            switch (k)
+            {
+                case TargetKind.Pawn:
+                    return new TargetingParameters { canTargetPawns = true, canTargetBuildings = false, canTargetItems = false, canTargetLocations = false };
+                case TargetKind.Building:
+                    return new TargetingParameters { canTargetPawns = false, canTargetBuildings = true, canTargetItems = false, canTargetLocations = false };
+                case TargetKind.Item:
+                    return new TargetingParameters { canTargetPawns = false, canTargetBuildings = false, canTargetItems = true, canTargetLocations = false };
+                case TargetKind.Cell:
+                    return new TargetingParameters { canTargetPawns = false, canTargetBuildings = false, canTargetItems = false, canTargetLocations = true };
+                default:
+                    return new TargetingParameters();
+            }
+        }
+
+        private bool HasTarget()
+        {
+            switch (suite?.TargetKind ?? TargetKind.None)
+            {
+                case TargetKind.None: return true;
+                case TargetKind.Pawn: return targetPawn != null;
+                case TargetKind.Building:
+                case TargetKind.Item: return targetThing != null;
+                case TargetKind.Cell: return targetCell.IsValid;
+                default: return true;
+            }
+        }
+
+        private string TargetLabel()
+        {
+            switch (suite?.TargetKind ?? TargetKind.None)
+            {
+                case TargetKind.None: return "(none)";
+                case TargetKind.Pawn: return targetPawn != null ? targetPawn.LabelShortCap : "<select a pawn>";
+                case TargetKind.Building:
+                case TargetKind.Item: return targetThing != null ? targetThing.LabelCap : "<select>";
+                case TargetKind.Cell: return targetCell.IsValid ? targetCell.ToString() : "<select a cell>";
+                default: return "";
+            }
+        }
+
+        private TestContext BuildContext()
+        {
+            return new TestContext
+            {
+                Map = map,
+                Kind = suite!.TargetKind,
+                Pawn = targetPawn,
+                Thing = targetThing,
+                Cell = targetCell,
+            };
         }
 
         private void DrawStepRow(Listing_Standard list, int i)
@@ -213,12 +316,13 @@ namespace TestRunner
 
         private void RunStep(int i)
         {
-            if (script == null || pawn == null || i < 0 || i >= script.Steps.Count)
+            if (script == null || suite == null || !HasTarget() || i < 0 || i >= script.Steps.Count)
             {
                 return;
             }
 
             TestStep step = script.Steps[i];
+            TestContext ctx = BuildContext();
 
             if (seeded)
             {
@@ -227,12 +331,11 @@ namespace TestRunner
 
             try
             {
-                step.Run(pawn);
+                step.Run(ctx);
             }
             catch (Exception e)
             {
-                // Genuine errors stay in Player.log (red error surface) and mirror into the suite log.
-                Log.Error("[Insight] " + suite!.Name + " step " + (i + 1) + " threw: " + e);
+                Log.Error("[Insight] " + suite.Name + " step " + (i + 1) + " threw: " + e);
                 WriteLog("step " + (i + 1) + " THREW: " + e.Message);
             }
             finally
@@ -243,7 +346,7 @@ namespace TestRunner
                 }
             }
 
-            string dump = suite?.Describe?.Invoke(pawn) ?? "";
+            string dump = suite.Describe?.Invoke(ctx) ?? "";
             dumps[i] = dump;
 
             if (step.Check != null)
@@ -251,7 +354,7 @@ namespace TestRunner
                 CheckResult r;
                 try
                 {
-                    r = step.Check(pawn);
+                    r = step.Check(ctx);
                 }
                 catch (Exception e)
                 {
@@ -280,7 +383,8 @@ namespace TestRunner
             sb.Append("{\n");
             sb.Append("  \"suite\": ").Append(J(suite.Name)).Append(",\n");
             sb.Append("  \"script\": ").Append(J(script.Name)).Append(",\n");
-            sb.Append("  \"pawn\": ").Append(J(pawn?.LabelShortCap ?? "null")).Append(",\n");
+            sb.Append("  \"kind\": ").Append(J(suite.TargetKind.ToString())).Append(",\n");
+            sb.Append("  \"target\": ").Append(J(TargetLabel())).Append(",\n");
             sb.Append("  \"seeded\": ").Append(seeded ? "true" : "false").Append(",\n");
             sb.Append("  \"summary\": { \"pass\": ").Append(pass).Append(", \"fail\": ").Append(fail)
               .Append(", \"pending\": ").Append(pending).Append(", \"manual\": ").Append(manual).Append(" },\n");

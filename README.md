@@ -21,8 +21,8 @@ Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits
 ## Using it
 
 1. Enable **Insight - Test Runner**, the mod under test, and that mod's test kit (kits load after both).
-2. Dev mode on -> debug actions -> category **`Testing`** -> **`Open test runner`** -> click a pawn.
-3. Pick a suite's script and step through:
+2. Dev mode on -> debug actions -> category **`Testing`** -> **`Open test runner`** (global; no click to open).
+3. Pick a suite's script; if it targets a pawn/building/item/cell, hit **Select target** and click one, then step through:
    - **Run & Next** runs the current step and evaluates its check; **Run all** runs the whole script.
    - **Prev / Restart / Suites** navigate. **Save report** writes without a full run.
    - **Seeded RNG** makes random outcomes repeat run to run; turn it off to sample variance.
@@ -41,6 +41,7 @@ worked example. It assumes no prior context.
 
 - `ITestProvider` - implement it (public parameterless ctor); auto-discovered at startup.
 - `TestRegistry.Register(TestSuite)` - manual registration alternative.
-- `TestSuite(name, List<TestScript> scripts, Func<Pawn,string>? describe)`
+- `TargetKind` (None/Pawn/Building/Item/Cell) + `TestContext` (Map + selected Pawn/Thing/Cell) given to steps.
+- `TestSuite(name, TargetKind, List<TestScript> scripts, Func<TestContext,string>? describe)`
 - `TestScript` / `TestStep` and the `Test.Do/Note/Check/Script` builders.
 - `CheckResult` and the `Assert` helpers.

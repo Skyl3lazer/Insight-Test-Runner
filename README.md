@@ -14,6 +14,10 @@ can only be judged against the running game. Insight gives you a repeatable, scr
 a mod's behavior on a live pawn, assert the parts that are machine-checkable, and get a written
 record of each run - so you (or a tool reading the report) can tell what passed and what broke.
 
+## AI Disclosure
+
+This test framework was written nearly entirely via AI. It's not meant to be something you run in a normal save, it exists exclusively to let modders write test harnesses for their own code. Do not use it on a real save without a backup. The only reason I (skyl3lazer) am ok with this is because the point is that it does provably-true/false assertions, and there's nothing for the AI to hallucinate. *You* write all of the code, helpers, and assertions it uses.
+
 ## Install
 
 Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits load after it.

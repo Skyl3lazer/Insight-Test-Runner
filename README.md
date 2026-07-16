@@ -25,7 +25,9 @@ Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits
 3. Pick a suite's script; if it targets a pawn/building/item/cell, hit **Select target** and click one, then step through:
    - **Run & Next** runs the current step and evaluates its check; **Run all** runs the whole script.
    - **Prev / Restart / Suites** navigate. **Save report** writes without a full run.
-   - **Seeded RNG** makes random outcomes repeat run to run; turn it off to sample variance.
+   - **RNG mode** (Real / Seeded / Stubbed): Real samples variance, Seeded makes outcomes repeat run
+     to run, Stubbed forces the `Rand` results a step declares via `.Stub(...)` so a specific branch
+     is exercised deterministically (unused or extra rolls fail the step).
 4. Output lands in `%USERPROFILE%\AppData\LocalLow\Ludeon Studios\RimWorld by Ludeon Studios\Insight\`:
    - `<suite>.json` - latest run, structured (for tooling).
    - `<suite>.log` - timestamped step narration; overwrites on each game launch, appends within it.
@@ -41,7 +43,8 @@ worked example. It assumes no prior context.
 
 - `ITestProvider` - implement it (public parameterless ctor); auto-discovered at startup.
 - `TestRegistry.Register(TestSuite)` - manual registration alternative.
-- `TargetKind` (None/Pawn/Building/Item/Cell) + `TestContext` (Map + selected Pawn/Thing/Cell) given to steps.
+- `TargetKind` (None/Pawn/Building/Item/Cell) + `TestContext` (Map + selected Pawn/Thing/Cell + `RngMode Rng`) given to steps.
 - `TestSuite(name, TargetKind, List<TestScript> scripts, Func<TestContext,string>? describe)`
-- `TestScript` / `TestStep` and the `Test.Do/Note/Check/Script` builders.
+- `TestScript` / `TestStep` and the `Test.Do/Note/Check/Script` builders; `TestStep.Stub(...)` forces `Rand` results.
+- `RngMode` (Real/Seeded/Stubbed) + `StubBuilder` (`.Chance/.Value/.Range/.RangeInt`).
 - `CheckResult` and the `Assert` helpers.

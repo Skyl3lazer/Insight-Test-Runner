@@ -9,5 +9,6 @@ namespace TestRunner
         public Pawn? Pawn;
         public Thing? Thing;   // set for Building and Item kinds
         public IntVec3 Cell = IntVec3.Invalid;
+        public RngMode Rng;
     }
 }

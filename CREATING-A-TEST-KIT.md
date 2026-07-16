@@ -18,8 +18,12 @@ A complete, self-contained recipe for building an Insight test kit for a RimWorl
 - A **script** (`TestScript`) = a name + an ordered list of **steps**.
 - A **step** (`TestStep`) = an instruction + an `Action<TestContext>` to run + an optional
   `Func<TestContext, CheckResult>` self-check. No check => human-judged (UI/feel, or a manual note).
-- A **`TestContext`** is handed to every step: `Map` (always) plus the selected target for the kind -
-  `ctx.Pawn`, `ctx.Thing` (building/item), or `ctx.Cell`. A step reads the field for its suite's kind.
+  A step may also carry an optional **stub plan** (`.Stub(...)`) that forces specific `Rand` results.
+- A **`TestContext`** is handed to every step: `Map` (always), the selected target for the kind -
+  `ctx.Pawn`, `ctx.Thing` (building/item), or `ctx.Cell` - and `ctx.Rng` (the active `RngMode`:
+  `Real` / `Seeded` / `Stubbed`), so a check can adapt to the run mode.
+- The runner offers three **RNG modes**: `Real` (live), `Seeded` (fixed per-step seed, repeatable),
+  and `Stubbed` (a step's `.Stub(...)` values are forced; unplanned steps/calls fall back to seeded).
 - Insight discovers your suite automatically (you implement `ITestProvider`), shows it in the runner,
   has the tester select the target, drives the steps, and writes `Insight\<suite>.json` + `.log`.
 
@@ -197,7 +201,7 @@ All in namespace `TestRunner`.
 `TargetKind` (enum): `None`, `Pawn`, `Building`, `Item`, `Cell`.
 
 `TestContext` (handed to every step): `Map Map`, `TargetKind Kind`, `Pawn? Pawn`, `Thing? Thing`
-(building/item), `IntVec3 Cell`.
+(building/item), `IntVec3 Cell`, `RngMode Rng` (Real / Seeded / Stubbed - the active run mode).
 
 Builders (`Test` static class):
 - `Do(string instruction, Action<TestContext> op)` - run an action; logs a dump.
@@ -218,6 +222,18 @@ Assertions (`Assert` static class) - each returns a `CheckResult`:
 - `All(params CheckResult[] results)` - passes only if all pass; details concatenated.
 
 For custom logic a check returns `CheckResult.Ok("detail")` / `CheckResult.Fail("detail")` directly.
+
+Forcing RNG (`RngMode.Stubbed` only) - attach a plan to a step and it is applied while that step's op
+runs; other modes ignore it:
+- `step.Stub(r => r.Chance(true, false).Value(0.1f).Range(5f).RangeInt(3))` - fluent per `Rand` entry
+  point. Each method has its own ordered queue consumed in call order: `Chance` -> `Rand.Chance`,
+  `Value` -> `Rand.Value`, `Range` -> `Rand.Range(float,float)`, `RangeInt` -> `Rand.Range(int,int)`.
+- Declare **exactly** the calls the driven code path makes on that method. A leftover value (declared
+  but not consumed) or an extra call past the declared count **fails the step** ("stub drift"), which
+  catches a shift in the target mod's call order rather than silently exercising the wrong branch.
+- Only stub calls that are actually reached; a roll behind a gate that the op skips will drift.
+- Because the check runs in every mode, make it mode-aware: `ctx.Rng == RngMode.Stubbed ?
+  Assert.Eq(...) : Assert.InRange(...)` so Run-all is green under Real/Seeded too.
 
 `TestSuite(string name, TargetKind targetKind, List<TestScript> scripts, Func<TestContext,string>? describe = null)`
 - `describe` is the per-step state dump; pass `null` for no dumps.
@@ -254,8 +270,8 @@ the target's tab for the human-judged steps.
   clear anything your ops leave behind - stale state leaking between scripts is the most common false
   failure.
 - **Prefer deterministic ops for checked steps.** Where the target mod rolls RNG, either use a forced
-  variant, assert a *range* (`InRange`), or rely on the runner's seeded mode; say so in the
-  instruction and turn seed off occasionally to sample variance.
+  variant, assert a *range* (`InRange`), rely on Seeded mode, or force the exact branch with
+  `.Stub(...)` in Stubbed mode; say so in the instruction and run Real occasionally to sample variance.
 - **Human-judge what has no hook.** UI appearance, "feel", and anything you cannot read as a value
   stays a `Note`; do not fake a check for it.
 - **One suite per kit** is the norm; split into multiple suites only when areas are genuinely

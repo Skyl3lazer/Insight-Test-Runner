@@ -17,7 +17,7 @@ namespace TestRunner
         private TestSuite? suite;
         private TestScript? script;
         private int cursor;
-        private bool seeded = true;
+        private RngMode mode = RngMode.Seeded;
         private readonly Dictionary<int, CheckResult> results = new Dictionary<int, CheckResult>();
         private readonly Dictionary<int, string> dumps = new Dictionary<int, string>();
 
@@ -63,7 +63,21 @@ namespace TestRunner
                 BeginSelectTarget();
             }
 
-            list.CheckboxLabeled("Seeded RNG (repeatable rolls)", ref seeded, "On: each step rolls with a fixed per-step seed, so random outcomes repeat run to run. Off: real RNG, to catch variance.");
+            if (list.RadioButton("Real RNG (sample variance)", mode == RngMode.Real, tooltip: "Live RNG - random outcomes vary run to run."))
+            {
+                mode = RngMode.Real;
+            }
+
+            if (list.RadioButton("Seeded RNG (repeatable rolls)", mode == RngMode.Seeded, tooltip: "Each step rolls with a fixed per-step seed, so random outcomes repeat run to run."))
+            {
+                mode = RngMode.Seeded;
+            }
+
+            if (list.RadioButton("Stubbed RNG (force declared rolls)", mode == RngMode.Stubbed, tooltip: "Steps with a .Stub() plan get their declared Rand results forced; unplanned steps and calls run seeded. Unused or extra rolls fail the step."))
+            {
+                mode = RngMode.Stubbed;
+            }
+
             list.Gap(4f);
 
             for (int i = 0; i < script.Steps.Count; i++)
@@ -237,6 +251,7 @@ namespace TestRunner
                 Pawn = targetPawn,
                 Thing = targetThing,
                 Cell = targetCell,
+                Rng = mode,
             };
         }
 
@@ -270,8 +285,8 @@ namespace TestRunner
         private string Summary()
         {
             Tally(out int pass, out int fail, out int pending, out int manual);
-            return string.Format("Checks - PASS {0}  FAIL {1}  pending {2}  |  manual {3}   (seed: {4})",
-                pass, fail, pending, manual, seeded ? "on" : "off");
+            return string.Format("Checks - PASS {0}  FAIL {1}  pending {2}  |  manual {3}   (rng: {4})",
+                pass, fail, pending, manual, mode);
         }
 
         private void Tally(out int pass, out int fail, out int pending, out int manual)
@@ -279,13 +294,13 @@ namespace TestRunner
             pass = fail = pending = manual = 0;
             for (int i = 0; i < script!.Steps.Count; i++)
             {
-                if (script.Steps[i].Check == null)
-                {
-                    manual++;
-                }
-                else if (results.TryGetValue(i, out CheckResult r))
+                if (results.TryGetValue(i, out CheckResult r))
                 {
                     if (r.Pass) pass++; else fail++;
+                }
+                else if (script.Steps[i].Check == null)
+                {
+                    manual++;
                 }
                 else
                 {
@@ -318,11 +333,19 @@ namespace TestRunner
             TestStep step = script.Steps[i];
             TestContext ctx = BuildContext();
 
-            if (seeded)
+            bool pushed = mode == RngMode.Seeded || mode == RngMode.Stubbed;
+            bool armed = mode == RngMode.Stubbed && step.StubPlan != null;
+            if (pushed)
             {
                 Rand.PushState(BaseSeed + i);
             }
 
+            if (armed)
+            {
+                RandStub.Arm(step.StubPlan!);
+            }
+
+            string? driftError = null;
             try
             {
                 step.Run(ctx);
@@ -334,7 +357,14 @@ namespace TestRunner
             }
             finally
             {
-                if (seeded)
+                if (armed && RandStub.Drift(out string de))
+                {
+                    driftError = de;
+                }
+
+                RandStub.Disarm();
+
+                if (pushed)
                 {
                     Rand.PopState();
                 }
@@ -343,16 +373,21 @@ namespace TestRunner
             string dump = suite.Describe?.Invoke(ctx) ?? "";
             dumps[i] = dump;
 
-            if (step.Check != null)
+            if (step.Check != null || driftError != null)
             {
                 CheckResult r;
                 try
                 {
-                    r = step.Check(ctx);
+                    r = step.Check != null ? step.Check(ctx) : CheckResult.Ok();
                 }
                 catch (Exception e)
                 {
                     r = CheckResult.Fail("check threw: " + e.Message);
+                }
+
+                if (driftError != null)
+                {
+                    r = CheckResult.Fail("stub drift - " + driftError);
                 }
 
                 results[i] = r;
@@ -379,7 +414,7 @@ namespace TestRunner
             sb.Append("  \"script\": ").Append(J(script.Name)).Append(",\n");
             sb.Append("  \"kind\": ").Append(J(suite.TargetKind.ToString())).Append(",\n");
             sb.Append("  \"target\": ").Append(J(TargetLabel())).Append(",\n");
-            sb.Append("  \"seeded\": ").Append(seeded ? "true" : "false").Append(",\n");
+            sb.Append("  \"rngMode\": ").Append(J(mode.ToString())).Append(",\n");
             sb.Append("  \"summary\": { \"pass\": ").Append(pass).Append(", \"fail\": ").Append(fail)
               .Append(", \"pending\": ").Append(pending).Append(", \"manual\": ").Append(manual).Append(" },\n");
             sb.Append("  \"steps\": [\n");

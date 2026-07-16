@@ -27,12 +27,21 @@ namespace TestRunner
         public readonly string Instruction;
         public readonly Action<TestContext> Run;
         public readonly Func<TestContext, CheckResult>? Check;
+        public StubPlan? StubPlan;
 
         public TestStep(string instruction, Action<TestContext> run, Func<TestContext, CheckResult>? check = null)
         {
             Instruction = instruction;
             Run = run;
             Check = check;
+        }
+
+        public TestStep Stub(Action<StubBuilder> build)
+        {
+            StubPlan plan = StubPlan ?? new StubPlan();
+            build(new StubBuilder(plan));
+            StubPlan = plan;
+            return this;
         }
     }
 

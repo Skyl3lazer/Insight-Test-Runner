@@ -23,13 +23,16 @@ Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits
 1. Enable **Insight - Test Runner**, the mod under test, and that mod's test kit (kits load after both).
 2. Dev mode on -> debug actions -> category **`Testing`** -> **`Open test runner`** (global; no click to open).
 3. Pick a suite's script; if it targets a pawn/building/item/cell, hit **Select target** and click one, then step through:
-   - **Run & Next** runs the current step and evaluates its check; **Run all** runs the whole script.
+   - **Run & Next** runs the current step and evaluates its check; **Run script** runs the whole script.
+   - **Run suite** runs every script in the suite in order on the selected target and writes one combined report.
    - **Prev / Restart / Suites** navigate. **Save report** writes without a full run.
    - **RNG mode** (Real / Seeded / Stubbed): Real samples variance, Seeded makes outcomes repeat run
      to run, Stubbed forces the `Rand` results a step declares via `.Stub(...)` so a specific branch
      is exercised deterministically (unused or extra rolls fail the step).
 4. Output lands in `%USERPROFILE%\AppData\LocalLow\Ludeon Studios\RimWorld by Ludeon Studios\Insight\`:
-   - `<suite>.json` - latest run, structured (for tooling).
+   - `<suite>.json` - latest run, structured (for tooling): suite-level, with an aggregate `summary`
+     and a `scripts` array (each with its own summary + steps). Run suite fills every script; a
+     single-script run writes one entry.
    - `<suite>.log` - timestamped step narration; overwrites on each game launch, appends within it.
    Genuine exceptions also surface in `Player.log`.
 

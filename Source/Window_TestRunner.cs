@@ -38,7 +38,7 @@ namespace TestRunner
             absorbInputAroundWindow = false;
         }
 
-        public override Vector2 InitialSize => new Vector2(580f, 640f);
+        public override Vector2 InitialSize => new Vector2(580f, 680f);
 
         public override void DoWindowContents(Rect inRect)
         {
@@ -97,39 +97,48 @@ namespace TestRunner
                 GUI.color = Color.white;
             }
 
-            Rect row = list.GetRect(32f);
-            float w = (row.width - 20f) / 6f;
+            Rect row1 = list.GetRect(32f);
+            float w1 = (row1.width - 12f) / 4f;
             bool atEnd = cursor >= script.Steps.Count;
 
-            if (Widgets.ButtonText(Col(row, w, 0), "Prev") && cursor > 0)
+            if (Widgets.ButtonText(Col(row1, w1, 0), "Prev") && cursor > 0)
             {
                 cursor--;
             }
 
-            if (Widgets.ButtonText(Col(row, w, 1), atEnd ? "Done" : "Run & Next") && !atEnd && hasTarget)
+            if (Widgets.ButtonText(Col(row1, w1, 1), atEnd ? "Done" : "Run & Next") && !atEnd && hasTarget)
             {
                 RunStep(cursor);
                 cursor++;
             }
 
-            if (Widgets.ButtonText(Col(row, w, 2), "Run all") && hasTarget)
+            if (Widgets.ButtonText(Col(row1, w1, 2), "Run script") && hasTarget)
             {
                 RunAll();
             }
 
-            if (Widgets.ButtonText(Col(row, w, 3), "Save report"))
+            if (Widgets.ButtonText(Col(row1, w1, 3), "Run suite") && hasTarget)
+            {
+                RunSuite();
+            }
+
+            list.Gap(4f);
+            Rect row2 = list.GetRect(32f);
+            float w2 = (row2.width - 8f) / 3f;
+
+            if (Widgets.ButtonText(Col(row2, w2, 0), "Save report"))
             {
                 WriteReport();
             }
 
-            if (Widgets.ButtonText(Col(row, w, 4), "Restart"))
+            if (Widgets.ButtonText(Col(row2, w2, 1), "Restart"))
             {
                 cursor = 0;
                 results.Clear();
                 dumps.Clear();
             }
 
-            if (Widgets.ButtonText(Col(row, w, 5), "Suites"))
+            if (Widgets.ButtonText(Col(row2, w2, 2), "Suites"))
             {
                 suite = null;
                 script = null;
@@ -291,14 +300,19 @@ namespace TestRunner
 
         private void Tally(out int pass, out int fail, out int pending, out int manual)
         {
+            TallyOf(script!, results, out pass, out fail, out pending, out manual);
+        }
+
+        private static void TallyOf(TestScript sc, Dictionary<int, CheckResult> res, out int pass, out int fail, out int pending, out int manual)
+        {
             pass = fail = pending = manual = 0;
-            for (int i = 0; i < script!.Steps.Count; i++)
+            for (int i = 0; i < sc.Steps.Count; i++)
             {
-                if (results.TryGetValue(i, out CheckResult r))
+                if (res.TryGetValue(i, out CheckResult r))
                 {
                     if (r.Pass) pass++; else fail++;
                 }
-                else if (script.Steps[i].Check == null)
+                else if (sc.Steps[i].Check == null)
                 {
                     manual++;
                 }
@@ -319,18 +333,59 @@ namespace TestRunner
             }
 
             cursor = script.Steps.Count;
-            WriteLog(script.Name + " - Run all: " + Summary());
+            WriteLog(script.Name + " - Run script: " + Summary());
             WriteReport();
         }
 
-        private void RunStep(int i)
+        private void RunSuite()
         {
-            if (script == null || suite == null || !HasTarget() || i < 0 || i >= script.Steps.Count)
+            if (suite == null || !HasTarget())
             {
                 return;
             }
 
-            TestStep step = script.Steps[i];
+            List<ScriptRun> runs = new List<ScriptRun>();
+            int aPass = 0, aFail = 0, aPending = 0, aManual = 0;
+
+            foreach (TestScript sc in suite.Scripts)
+            {
+                Dictionary<int, CheckResult> res = new Dictionary<int, CheckResult>();
+                Dictionary<int, string> dmp = new Dictionary<int, string>();
+                for (int i = 0; i < sc.Steps.Count; i++)
+                {
+                    RunStepCore(sc, i, res, dmp);
+                }
+
+                TallyOf(sc, res, out int p, out int f, out int pend, out int man);
+                aPass += p; aFail += f; aPending += pend; aManual += man;
+                WriteLog(sc.Name + " - PASS " + p + " FAIL " + f + " pending " + pend + " manual " + man);
+                runs.Add(new ScriptRun(sc, res, dmp));
+
+                if (sc == script)
+                {
+                    results.Clear();
+                    dumps.Clear();
+                    foreach (KeyValuePair<int, CheckResult> kv in res) results[kv.Key] = kv.Value;
+                    foreach (KeyValuePair<int, string> kv in dmp) dumps[kv.Key] = kv.Value;
+                    cursor = sc.Steps.Count;
+                }
+            }
+
+            WriteLog(string.Format("Run suite - {0} scripts: PASS {1} FAIL {2} pending {3} manual {4} (rng: {5})",
+                runs.Count, aPass, aFail, aPending, aManual, mode));
+            WriteReportFile(runs);
+        }
+
+        private void RunStep(int i) => RunStepCore(script!, i, results, dumps);
+
+        private void RunStepCore(TestScript sc, int i, Dictionary<int, CheckResult> res, Dictionary<int, string> dmp)
+        {
+            if (suite == null || !HasTarget() || i < 0 || i >= sc.Steps.Count)
+            {
+                return;
+            }
+
+            TestStep step = sc.Steps[i];
             TestContext ctx = BuildContext();
 
             bool pushed = mode == RngMode.Seeded || mode == RngMode.Stubbed;
@@ -371,7 +426,7 @@ namespace TestRunner
             }
 
             string dump = suite.Describe?.Invoke(ctx) ?? "";
-            dumps[i] = dump;
+            dmp[i] = dump;
 
             if (step.Check != null || driftError != null)
             {
@@ -390,61 +445,53 @@ namespace TestRunner
                     r = CheckResult.Fail("stub drift - " + driftError);
                 }
 
-                results[i] = r;
-                WriteLog(script.Name + " - step " + (i + 1) + " [" + (r.Pass ? "PASS" : "FAIL") + "] " + step.Instruction + " -> " + r.Detail);
+                res[i] = r;
+                WriteLog(sc.Name + " - step " + (i + 1) + " [" + (r.Pass ? "PASS" : "FAIL") + "] " + step.Instruction + " -> " + r.Detail);
             }
             else
             {
-                WriteLog(script.Name + " - step " + (i + 1) + " (" + step.Instruction + ") -> " + dump);
+                WriteLog(sc.Name + " - step " + (i + 1) + " (" + step.Instruction + ") -> " + dump);
             }
         }
 
         private void WriteReport()
         {
-            if (script == null || suite == null)
+            if (script == null)
             {
                 return;
             }
 
-            Tally(out int pass, out int fail, out int pending, out int manual);
+            WriteReportFile(new List<ScriptRun> { new ScriptRun(script, results, dumps) });
+        }
+
+        private void WriteReportFile(List<ScriptRun> runs)
+        {
+            if (suite == null)
+            {
+                return;
+            }
+
+            int aPass = 0, aFail = 0, aPending = 0, aManual = 0;
+            foreach (ScriptRun run in runs)
+            {
+                TallyOf(run.Script, run.Results, out int p, out int f, out int pend, out int man);
+                aPass += p; aFail += f; aPending += pend; aManual += man;
+            }
 
             StringBuilder sb = new StringBuilder();
             sb.Append("{\n");
             sb.Append("  \"suite\": ").Append(J(suite.Name)).Append(",\n");
-            sb.Append("  \"script\": ").Append(J(script.Name)).Append(",\n");
             sb.Append("  \"kind\": ").Append(J(suite.TargetKind.ToString())).Append(",\n");
             sb.Append("  \"target\": ").Append(J(TargetLabel())).Append(",\n");
             sb.Append("  \"rngMode\": ").Append(J(mode.ToString())).Append(",\n");
-            sb.Append("  \"summary\": { \"pass\": ").Append(pass).Append(", \"fail\": ").Append(fail)
-              .Append(", \"pending\": ").Append(pending).Append(", \"manual\": ").Append(manual).Append(" },\n");
-            sb.Append("  \"steps\": [\n");
+            sb.Append("  \"summary\": { \"pass\": ").Append(aPass).Append(", \"fail\": ").Append(aFail)
+              .Append(", \"pending\": ").Append(aPending).Append(", \"manual\": ").Append(aManual).Append(" },\n");
+            sb.Append("  \"scripts\": [\n");
 
-            for (int i = 0; i < script.Steps.Count; i++)
+            for (int s = 0; s < runs.Count; s++)
             {
-                TestStep step = script.Steps[i];
-                string status;
-                string detail = "";
-                if (step.Check == null)
-                {
-                    status = "MANUAL";
-                }
-                else if (results.TryGetValue(i, out CheckResult r))
-                {
-                    status = r.Pass ? "PASS" : "FAIL";
-                    detail = r.Detail;
-                }
-                else
-                {
-                    status = "PENDING";
-                }
-
-                sb.Append("    { \"n\": ").Append(i + 1)
-                  .Append(", \"status\": ").Append(J(status))
-                  .Append(", \"instruction\": ").Append(J(step.Instruction))
-                  .Append(", \"detail\": ").Append(J(detail))
-                  .Append(", \"dump\": ").Append(J(dumps.TryGetValue(i, out string d) ? d : ""))
-                  .Append(" }");
-                sb.Append(i < script.Steps.Count - 1 ? ",\n" : "\n");
+                AppendScript(sb, runs[s]);
+                sb.Append(s < runs.Count - 1 ? ",\n" : "\n");
             }
 
             sb.Append("  ]\n}\n");
@@ -458,6 +505,63 @@ namespace TestRunner
             catch (Exception e)
             {
                 Log.Error("[Insight] report write failed: " + e);
+            }
+        }
+
+        private static void AppendScript(StringBuilder sb, ScriptRun run)
+        {
+            TestScript sc = run.Script;
+            TallyOf(sc, run.Results, out int pass, out int fail, out int pending, out int manual);
+
+            sb.Append("    {\n");
+            sb.Append("      \"script\": ").Append(J(sc.Name)).Append(",\n");
+            sb.Append("      \"summary\": { \"pass\": ").Append(pass).Append(", \"fail\": ").Append(fail)
+              .Append(", \"pending\": ").Append(pending).Append(", \"manual\": ").Append(manual).Append(" },\n");
+            sb.Append("      \"steps\": [\n");
+
+            for (int i = 0; i < sc.Steps.Count; i++)
+            {
+                TestStep step = sc.Steps[i];
+                string status;
+                string detail = "";
+                if (run.Results.TryGetValue(i, out CheckResult r))
+                {
+                    status = r.Pass ? "PASS" : "FAIL";
+                    detail = r.Detail;
+                }
+                else if (step.Check == null)
+                {
+                    status = "MANUAL";
+                }
+                else
+                {
+                    status = "PENDING";
+                }
+
+                sb.Append("        { \"n\": ").Append(i + 1)
+                  .Append(", \"status\": ").Append(J(status))
+                  .Append(", \"instruction\": ").Append(J(step.Instruction))
+                  .Append(", \"detail\": ").Append(J(detail))
+                  .Append(", \"dump\": ").Append(J(run.Dumps.TryGetValue(i, out string d) ? d : ""))
+                  .Append(" }");
+                sb.Append(i < sc.Steps.Count - 1 ? ",\n" : "\n");
+            }
+
+            sb.Append("      ]\n");
+            sb.Append("    }");
+        }
+
+        private sealed class ScriptRun
+        {
+            public readonly TestScript Script;
+            public readonly Dictionary<int, CheckResult> Results;
+            public readonly Dictionary<int, string> Dumps;
+
+            public ScriptRun(TestScript script, Dictionary<int, CheckResult> results, Dictionary<int, string> dumps)
+            {
+                Script = script;
+                Results = results;
+                Dumps = dumps;
             }
         }
 

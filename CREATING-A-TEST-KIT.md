@@ -254,8 +254,14 @@ exit the game (or hot-reload) and rebuild.
 To run: enable target + Insight + kit (kit after both), dev mode on, **Testing -> Open test runner**
 (a global action - no click needed to open). Pick your suite's script; if its `TargetKind` is not
 `None`, hit **Select target** and click the pawn/building/item/cell (the click is filtered to the
-kind); then **Run all**. Read `Insight\<suite>.json` (and `.log`) in the LocalLow RimWorld folder, and
-the target's tab for the human-judged steps.
+kind); then **Run script** (all steps of the current script) or **Run suite** (every script in the
+suite, in order, on the same target - use this for a full unattended pass; it also runs any
+destructive scripts, so pick a disposable target). Read `Insight\<suite>.json` (and `.log`) in the
+LocalLow RimWorld folder, and the target's tab for the human-judged steps.
+
+The report is suite-level: top-level `suite` / `kind` / `target` / `rngMode`, an aggregate `summary`,
+and a `scripts` array - each entry has its own `script` name, `summary`, and `steps`. A single-script
+run writes the same shape with one entry; Run suite writes them all. The file overwrites each run.
 
 ---
 

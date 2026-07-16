@@ -21,6 +21,11 @@ namespace TestRunner
         private readonly Dictionary<int, CheckResult> results = new Dictionary<int, CheckResult>();
         private readonly Dictionary<int, string> dumps = new Dictionary<int, string>();
         private string? suiteResult;
+        private Vector2 stepScroll;
+        private Vector2 pickerScroll;
+        private float stepsHeight;
+        private float pickerHeight;
+        private int scrolledCursor = -1;
 
         private Pawn? targetPawn;
         private Thing? targetThing;
@@ -43,48 +48,129 @@ namespace TestRunner
 
         public override void DoWindowContents(Rect inRect)
         {
-            Listing_Standard list = new Listing_Standard();
-            list.Begin(inRect);
-
-            list.Label("Map: " + (map?.Parent?.LabelCap ?? "<none>"));
-            list.GapLine();
-
             if (script == null || suite == null)
             {
-                DrawPicker(list);
-                list.End();
+                DrawPickerArea(inRect);
                 return;
             }
 
-            list.Label("Suite: " + suite.Name + "   Script: " + script.Name);
-
-            list.Label("Target [" + suite.TargetKind + "]: " + TargetLabel());
-            if (suite.TargetKind != TargetKind.None && list.ButtonText("Select target"))
+            Listing_Standard header = new Listing_Standard();
+            header.Begin(inRect);
+            header.Label("Map: " + (map?.Parent?.LabelCap ?? "<none>"));
+            header.GapLine();
+            header.Label("Suite: " + suite.Name + "   Script: " + script.Name);
+            header.Label("Target [" + suite.TargetKind + "]: " + TargetLabel());
+            if (suite.TargetKind != TargetKind.None && header.ButtonText("Select target"))
             {
                 BeginSelectTarget();
             }
 
-            if (list.RadioButton("Real RNG (sample variance)", mode == RngMode.Real, tooltip: "Live RNG - random outcomes vary run to run."))
+            if (header.RadioButton("Real RNG (sample variance)", mode == RngMode.Real, tooltip: "Live RNG - random outcomes vary run to run."))
             {
                 mode = RngMode.Real;
             }
 
-            if (list.RadioButton("Seeded RNG (repeatable rolls)", mode == RngMode.Seeded, tooltip: "Each step rolls with a fixed per-step seed, so random outcomes repeat run to run."))
+            if (header.RadioButton("Seeded RNG (repeatable rolls)", mode == RngMode.Seeded, tooltip: "Each step rolls with a fixed per-step seed, so random outcomes repeat run to run."))
             {
                 mode = RngMode.Seeded;
             }
 
-            if (list.RadioButton("Stubbed RNG (force declared rolls)", mode == RngMode.Stubbed, tooltip: "Steps with a .Stub() plan get their declared Rand results forced; unplanned steps and calls run seeded. Unused or extra rolls fail the step."))
+            if (header.RadioButton("Stubbed RNG (force declared rolls)", mode == RngMode.Stubbed, tooltip: "Steps with a .Stub() plan get their declared Rand results forced; unplanned steps and calls run seeded. Unused or extra rolls fail the step."))
             {
                 mode = RngMode.Stubbed;
             }
 
-            list.Gap(4f);
+            header.Gap(4f);
+            float headerBottom = inRect.y + header.CurHeight;
+            header.End();
 
+            bool hasTarget = HasTarget();
+            float footerH = FooterHeight(hasTarget);
+            Rect footerRect = new Rect(inRect.x, inRect.yMax - footerH, inRect.width, footerH);
+
+            Rect outRect = new Rect(inRect.x, headerBottom, inRect.width, Mathf.Max(0f, footerRect.y - headerBottom));
+            Rect viewRect = new Rect(0f, 0f, outRect.width - 16f, Mathf.Max(stepsHeight, outRect.height));
+            stepScroll = GUI.BeginScrollView(outRect, stepScroll, viewRect, false, true);
+            Listing_Standard stepsList = new Listing_Standard();
+            stepsList.Begin(viewRect);
+            float cursorTop = -1f;
+            float cursorBottom = -1f;
             for (int i = 0; i < script.Steps.Count; i++)
             {
-                DrawStepRow(list, i);
+                if (i == cursor)
+                {
+                    cursorTop = stepsList.CurHeight;
+                }
+
+                DrawStepRow(stepsList, i);
+
+                if (i == cursor)
+                {
+                    cursorBottom = stepsList.CurHeight;
+                }
             }
+
+            stepsHeight = stepsList.CurHeight;
+            stepsList.End();
+            GUI.EndScrollView();
+
+            if (cursor != scrolledCursor)
+            {
+                if (cursorTop >= 0f)
+                {
+                    if (cursorTop < stepScroll.y)
+                    {
+                        stepScroll.y = cursorTop;
+                    }
+                    else if (cursorBottom > stepScroll.y + outRect.height)
+                    {
+                        stepScroll.y = cursorBottom - outRect.height;
+                    }
+
+                    stepScroll.y = Mathf.Clamp(stepScroll.y, 0f, Mathf.Max(0f, stepsHeight - outRect.height));
+                }
+
+                scrolledCursor = cursor;
+            }
+
+            DrawFooter(footerRect, hasTarget);
+        }
+
+        private void DrawPickerArea(Rect inRect)
+        {
+            Rect viewRect = new Rect(0f, 0f, inRect.width - 16f, Mathf.Max(pickerHeight, inRect.height));
+            Widgets.BeginScrollView(inRect, ref pickerScroll, viewRect);
+            Listing_Standard list = new Listing_Standard();
+            list.Begin(viewRect);
+            list.Label("Map: " + (map?.Parent?.LabelCap ?? "<none>"));
+            list.GapLine();
+            DrawPicker(list);
+            pickerHeight = list.CurHeight;
+            list.End();
+            Widgets.EndScrollView();
+        }
+
+        private float FooterHeight(bool hasTarget)
+        {
+            float h = 12f;
+            h += Text.LineHeight;
+            if (suiteResult != null)
+            {
+                h += Text.LineHeight;
+            }
+
+            if (!hasTarget)
+            {
+                h += Text.LineHeight;
+            }
+
+            return h + 4f + 32f + 4f + 32f + 6f;
+        }
+
+        private void DrawFooter(Rect rect, bool hasTarget)
+        {
+            Listing_Standard list = new Listing_Standard();
+            list.Begin(rect);
 
             GUI.color = Color.white;
             list.GapLine();
@@ -97,7 +183,6 @@ namespace TestRunner
                 GUI.color = Color.white;
             }
 
-            bool hasTarget = HasTarget();
             if (!hasTarget)
             {
                 GUI.color = new Color(0.9f, 0.6f, 0.4f);
@@ -107,7 +192,7 @@ namespace TestRunner
 
             Rect row1 = list.GetRect(32f);
             float w1 = (row1.width - 12f) / 4f;
-            bool atEnd = cursor >= script.Steps.Count;
+            bool atEnd = cursor >= script!.Steps.Count;
 
             if (Widgets.ButtonText(Col(row1, w1, 0), "Prev") && cursor > 0)
             {
@@ -145,6 +230,7 @@ namespace TestRunner
                 results.Clear();
                 dumps.Clear();
                 suiteResult = null;
+                stepScroll = Vector2.zero;
             }
 
             if (Widgets.ButtonText(Col(row2, w2, 2), "Suites"))
@@ -155,6 +241,7 @@ namespace TestRunner
                 results.Clear();
                 dumps.Clear();
                 suiteResult = null;
+                stepScroll = Vector2.zero;
             }
 
             list.End();
@@ -194,6 +281,7 @@ namespace TestRunner
                         results.Clear();
                         dumps.Clear();
                         suiteResult = null;
+                        stepScroll = Vector2.zero;
                     }
                 }
             }

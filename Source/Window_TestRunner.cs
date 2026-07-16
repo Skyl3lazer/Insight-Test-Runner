@@ -139,7 +139,7 @@ namespace TestRunner
         private void DrawPickerArea(Rect inRect)
         {
             Rect viewRect = new Rect(0f, 0f, inRect.width - 16f, Mathf.Max(pickerHeight, inRect.height));
-            Widgets.BeginScrollView(inRect, ref pickerScroll, viewRect);
+            pickerScroll = GUI.BeginScrollView(inRect, pickerScroll, viewRect, false, true);
             Listing_Standard list = new Listing_Standard();
             list.Begin(viewRect);
             list.Label("Map: " + (map?.Parent?.LabelCap ?? "<none>"));
@@ -147,7 +147,7 @@ namespace TestRunner
             DrawPicker(list);
             pickerHeight = list.CurHeight;
             list.End();
-            Widgets.EndScrollView();
+            GUI.EndScrollView();
         }
 
         private float FooterHeight(bool hasTarget)

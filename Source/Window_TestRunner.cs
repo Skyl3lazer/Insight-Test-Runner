@@ -20,6 +20,7 @@ namespace TestRunner
         private RngMode mode = RngMode.Seeded;
         private readonly Dictionary<int, CheckResult> results = new Dictionary<int, CheckResult>();
         private readonly Dictionary<int, string> dumps = new Dictionary<int, string>();
+        private string? suiteResult;
 
         private Pawn? targetPawn;
         private Thing? targetThing;
@@ -89,6 +90,13 @@ namespace TestRunner
             list.GapLine();
             list.Label(Summary());
 
+            if (suiteResult != null)
+            {
+                GUI.color = new Color(0.8f, 0.85f, 1f);
+                list.Label(suiteResult);
+                GUI.color = Color.white;
+            }
+
             bool hasTarget = HasTarget();
             if (!hasTarget)
             {
@@ -136,6 +144,7 @@ namespace TestRunner
                 cursor = 0;
                 results.Clear();
                 dumps.Clear();
+                suiteResult = null;
             }
 
             if (Widgets.ButtonText(Col(row2, w2, 2), "Suites"))
@@ -145,6 +154,7 @@ namespace TestRunner
                 cursor = 0;
                 results.Clear();
                 dumps.Clear();
+                suiteResult = null;
             }
 
             list.End();
@@ -183,6 +193,7 @@ namespace TestRunner
                         cursor = 0;
                         results.Clear();
                         dumps.Clear();
+                        suiteResult = null;
                     }
                 }
             }
@@ -325,6 +336,7 @@ namespace TestRunner
 
         private void RunAll()
         {
+            suiteResult = null;
             results.Clear();
             dumps.Clear();
             for (int i = 0; i < script!.Steps.Count; i++)
@@ -371,8 +383,9 @@ namespace TestRunner
                 }
             }
 
-            WriteLog(string.Format("Run suite - {0} scripts: PASS {1} FAIL {2} pending {3} manual {4} (rng: {5})",
-                runs.Count, aPass, aFail, aPending, aManual, mode));
+            suiteResult = string.Format("Run suite - {0} scripts: PASS {1} FAIL {2} pending {3} manual {4} (rng: {5})",
+                runs.Count, aPass, aFail, aPending, aManual, mode);
+            WriteLog(suiteResult);
             WriteReportFile(runs);
         }
 

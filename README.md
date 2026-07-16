@@ -28,7 +28,7 @@ Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits
 2. Dev mode on -> debug actions -> category **`Testing`** -> **`Open test runner`** (global; no click to open).
 3. Pick a suite's script; if it targets a pawn/building/item/cell, hit **Select target** and click one, then step through:
    - **Run & Next** runs the current step and evaluates its check; **Run script** runs the whole script.
-   - Manual steps (no check) show checkmark / X icon buttons on the active row - click to record PASS/FAIL and advance.
+   - Human-judged `Note` steps show checkmark / X icon buttons on the active row - click to record PASS/FAIL and advance. Action-only `Do` steps (setup/teardown) just run, no buttons.
    - **Run suite** runs every script in the suite in order on the selected target, writes one combined report, and shows the aggregate PASS/FAIL/pending/manual tally in the window and the log.
    - **Prev / Restart / Suites** navigate. **Save report** writes without a full run.
    - **RNG mode** (Real / Seeded / Stubbed): Real samples variance, Seeded makes outcomes repeat run
@@ -53,6 +53,6 @@ worked example. It assumes no prior context.
 - `TestRegistry.Register(TestSuite)` - manual registration alternative.
 - `TargetKind` (None/Pawn/Building/Item/Cell) + `TestContext` (Map + selected Pawn/Thing/Cell + `RngMode Rng`) given to steps.
 - `TestSuite(name, TargetKind, List<TestScript> scripts, Func<TestContext,string>? describe)`
-- `TestScript` / `TestStep` and the `Test.Do/Note/Check/Script` builders; `TestStep.Stub(...)` forces `Rand` results.
+- `TestScript` / `TestStep` and the `Test.Do/Note/Check/Script` builders (`Do(op)` = action-only, `Do(op,check)`/`Check` = auto, `Note` = human-judged); `TestStep.Stub(...)` forces `Rand` results.
 - `RngMode` (Real/Seeded/Stubbed) + `StubBuilder` (`.Chance/.Value/.Range/.RangeInt`).
 - `CheckResult` and the `Assert` helpers.

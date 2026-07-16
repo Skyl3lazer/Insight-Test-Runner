@@ -27,13 +27,15 @@ namespace TestRunner
         public readonly string Instruction;
         public readonly Action<TestContext> Run;
         public readonly Func<TestContext, CheckResult>? Check;
+        public readonly bool HumanJudged;
         public StubPlan? StubPlan;
 
-        public TestStep(string instruction, Action<TestContext> run, Func<TestContext, CheckResult>? check = null)
+        public TestStep(string instruction, Action<TestContext> run, Func<TestContext, CheckResult>? check = null, bool humanJudged = false)
         {
             Instruction = instruction;
             Run = run;
             Check = check;
+            HumanJudged = humanJudged;
         }
 
         public TestStep Stub(Action<StubBuilder> build)
@@ -81,7 +83,7 @@ namespace TestRunner
 
         public static TestStep Check(string instruction, Func<TestContext, CheckResult> check) => new TestStep(instruction, _ => { }, check);
 
-        public static TestStep Note(string instruction) => new TestStep(instruction, _ => { });
+        public static TestStep Note(string instruction) => new TestStep(instruction, _ => { }, null, humanJudged: true);
 
         public static TestScript Script(string name, params TestStep[] steps) => new TestScript(name, steps.ToList());
     }

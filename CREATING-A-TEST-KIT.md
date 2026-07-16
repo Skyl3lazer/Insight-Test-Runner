@@ -16,9 +16,14 @@ A complete, self-contained recipe for building an Insight test kit for a RimWorl
   it needs), `Pawn`, `Building`, `Item`, or `Cell`. It decides what the runner asks the tester to
   click before running.
 - A **script** (`TestScript`) = a name + an ordered list of **steps**.
-- A **step** (`TestStep`) = an instruction + an `Action<TestContext>` to run + an optional
-  `Func<TestContext, CheckResult>` self-check. No check => human-judged: the runner shows pass/fail
-  (checkmark / X) buttons on the active row so the tester records the verdict (it counts in the tally + report).
+- A **step** (`TestStep`) is one of four kinds by how it gets its verdict:
+  - **auto-checked** (`Do(instr, op, check)` / `Check(instr, check)`) - runs, then a `CheckResult`
+    decides PASS/FAIL.
+  - **human-judged** (`Note(instr)`) - the runner shows pass/fail (checkmark / X) buttons on the
+    active row; the tester records the verdict (counts in the tally + report). To judge the result of
+    an action, put the action in a preceding `Do(instr, op)` step and the `Note` right after it.
+  - **action-only** (`Do(instr, op)`) - runs its op with **no verdict**: setup, teardown, state
+    mutation. No buttons, not counted as pass/fail/pending/manual (report status `ACTION`).
   A step may also carry an optional **stub plan** (`.Stub(...)`) that forces specific `Rand` results.
 - A **`TestContext`** is handed to every step: `Map` (always), the selected target for the kind -
   `ctx.Pawn`, `ctx.Thing` (building/item), or `ctx.Cell` - and `ctx.Rng` (the active `RngMode`:
@@ -205,10 +210,12 @@ All in namespace `TestRunner`.
 (building/item), `IntVec3 Cell`, `RngMode Rng` (Real / Seeded / Stubbed - the active run mode).
 
 Builders (`Test` static class):
-- `Do(string instruction, Action<TestContext> op)` - run an action; logs a dump.
-- `Do(string instruction, Action<TestContext> op, Func<TestContext,CheckResult> check)` - + self-check.
-- `Check(string instruction, Func<TestContext,CheckResult> check)` - assertion only, no state change.
-- `Note(string instruction)` - human-judged only (UI/feel or a manual setup prerequisite).
+- `Do(string instruction, Action<TestContext> op)` - **action-only**: run an op, no verdict (setup,
+  teardown, mutation). No pass/fail buttons; report status `ACTION`.
+- `Do(string instruction, Action<TestContext> op, Func<TestContext,CheckResult> check)` - run + auto self-check.
+- `Check(string instruction, Func<TestContext,CheckResult> check)` - auto self-check, no state change.
+- `Note(string instruction)` - human-judged, no op (read the tab/UI, then mark pass/fail). To judge an
+  action's result, precede the `Note` with an action-only `Do(instr, op)`.
 - `Script(string name, params TestStep[] steps)` - assemble a script.
 
 Combine multiple ops in one step with a lambda: `ctx => { OpA(ctx.Pawn); OpB(ctx.Pawn); }`.

@@ -375,7 +375,12 @@ namespace TestRunner
                 color = r.Pass ? new Color(0.4f, 0.85f, 0.4f) : new Color(0.9f, 0.4f, 0.4f);
                 marker = r.Pass ? "PASS" : "FAIL";
             }
-            else if (step.Check == null)
+            else if (step.Check != null)
+            {
+                color = i == cursor ? Color.yellow : new Color(0.7f, 0.7f, 0.7f);
+                marker = "?";
+            }
+            else if (step.HumanJudged)
             {
                 color = i == cursor ? Color.yellow : new Color(0.7f, 0.7f, 0.7f);
                 marker = "-";
@@ -383,14 +388,14 @@ namespace TestRunner
             else
             {
                 color = i == cursor ? Color.yellow : new Color(0.7f, 0.7f, 0.7f);
-                marker = "?";
+                marker = ">";
             }
 
             string prefix = (i == cursor ? "> " : "   ") + (i + 1) + ". [" + marker + "] ";
             string detail = hasResult && !r.Detail.NullOrEmpty() ? "   (" + r.Detail + ")" : "";
             string text = prefix + step.Instruction + detail;
 
-            bool showManualButtons = step.Check == null && i == cursor;
+            bool showManualButtons = step.HumanJudged && i == cursor;
             float btnW = Text.LineHeight;
             const float gap = 2f;
             float labelWidth = showManualButtons ? list.ColumnWidth - ((btnW * 2f) + (gap * 2f)) : list.ColumnWidth;
@@ -449,13 +454,13 @@ namespace TestRunner
                 {
                     if (r.Pass) pass++; else fail++;
                 }
-                else if (sc.Steps[i].Check == null)
-                {
-                    manual++;
-                }
-                else
+                else if (sc.Steps[i].Check != null)
                 {
                     pending++;
+                }
+                else if (sc.Steps[i].HumanJudged)
+                {
+                    manual++;
                 }
             }
         }
@@ -668,13 +673,17 @@ namespace TestRunner
                     status = r.Pass ? "PASS" : "FAIL";
                     detail = r.Detail;
                 }
-                else if (step.Check == null)
+                else if (step.Check != null)
+                {
+                    status = "PENDING";
+                }
+                else if (step.HumanJudged)
                 {
                     status = "MANUAL";
                 }
                 else
                 {
-                    status = "PENDING";
+                    status = "ACTION";
                 }
 
                 sb.Append("        { \"n\": ").Append(i + 1)

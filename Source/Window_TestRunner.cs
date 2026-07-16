@@ -92,7 +92,7 @@ namespace TestRunner
             Rect viewRect = new Rect(0f, 0f, outRect.width - 16f, Mathf.Max(stepsHeight, outRect.height));
             stepScroll = GUI.BeginScrollView(outRect, stepScroll, viewRect, false, true);
             Listing_Standard stepsList = new Listing_Standard();
-            stepsList.Begin(viewRect);
+            stepsList.Begin(new Rect(0f, 0f, viewRect.width, 100000f));
             float cursorTop = -1f;
             float cursorBottom = -1f;
             for (int i = 0; i < script.Steps.Count; i++)
@@ -141,7 +141,7 @@ namespace TestRunner
             Rect viewRect = new Rect(0f, 0f, inRect.width - 16f, Mathf.Max(pickerHeight, inRect.height));
             pickerScroll = GUI.BeginScrollView(inRect, pickerScroll, viewRect, false, true);
             Listing_Standard list = new Listing_Standard();
-            list.Begin(viewRect);
+            list.Begin(new Rect(0f, 0f, viewRect.width, 100000f));
             list.Label("Map: " + (map?.Parent?.LabelCap ?? "<none>"));
             list.GapLine();
             DrawPicker(list);

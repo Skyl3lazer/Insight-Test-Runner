@@ -17,7 +17,8 @@ A complete, self-contained recipe for building an Insight test kit for a RimWorl
   click before running.
 - A **script** (`TestScript`) = a name + an ordered list of **steps**.
 - A **step** (`TestStep`) = an instruction + an `Action<TestContext>` to run + an optional
-  `Func<TestContext, CheckResult>` self-check. No check => human-judged (UI/feel, or a manual note).
+  `Func<TestContext, CheckResult>` self-check. No check => human-judged: the runner shows pass/fail
+  (checkmark / X) buttons on the active row so the tester records the verdict (it counts in the tally + report).
   A step may also carry an optional **stub plan** (`.Stub(...)`) that forces specific `Rand` results.
 - A **`TestContext`** is handed to every step: `Map` (always), the selected target for the kind -
   `ctx.Pawn`, `ctx.Thing` (building/item), or `ctx.Cell` - and `ctx.Rng` (the active `RngMode`:
@@ -280,6 +281,7 @@ run writes the same shape with one entry; Run suite writes them all. The file ov
   variant, assert a *range* (`InRange`), rely on Seeded mode, or force the exact branch with
   `.Stub(...)` in Stubbed mode; say so in the instruction and run Real occasionally to sample variance.
 - **Human-judge what has no hook.** UI appearance, "feel", and anything you cannot read as a value
-  stays a `Note`; do not fake a check for it.
+  stays a `Note`; do not fake a check for it. The tester records its verdict live with the row's
+  pass/fail buttons, so it still lands in the tally and report.
 - **One suite per kit** is the norm; split into multiple suites only when areas are genuinely
   separate. Output files are named by suite.

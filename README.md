@@ -28,6 +28,7 @@ Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits
 2. Dev mode on -> debug actions -> category **`Testing`** -> **`Open test runner`** (global; no click to open).
 3. Pick a suite's script; if it targets a pawn/building/item/cell, hit **Select target** and click one, then step through:
    - **Run & Next** runs the current step and evaluates its check; **Run script** runs the whole script.
+   - Manual steps (no check) show checkmark / X icon buttons on the active row - click to record PASS/FAIL and advance.
    - **Run suite** runs every script in the suite in order on the selected target, writes one combined report, and shows the aggregate PASS/FAIL/pending/manual tally in the window and the log.
    - **Prev / Restart / Suites** navigate. **Save report** writes without a full run.
    - **RNG mode** (Real / Seeded / Stubbed): Real samples variance, Seeded makes outcomes repeat run

@@ -281,25 +281,63 @@ namespace TestRunner
             bool hasResult = results.TryGetValue(i, out CheckResult r);
 
             string marker;
-            if (step.Check == null)
+            Color color;
+            if (hasResult)
             {
-                GUI.color = i == cursor ? Color.yellow : new Color(0.7f, 0.7f, 0.7f);
-                marker = "-";
+                color = r.Pass ? new Color(0.4f, 0.85f, 0.4f) : new Color(0.9f, 0.4f, 0.4f);
+                marker = r.Pass ? "PASS" : "FAIL";
             }
-            else if (!hasResult)
+            else if (step.Check == null)
             {
-                GUI.color = i == cursor ? Color.yellow : new Color(0.7f, 0.7f, 0.7f);
-                marker = "?";
+                color = i == cursor ? Color.yellow : new Color(0.7f, 0.7f, 0.7f);
+                marker = "-";
             }
             else
             {
-                GUI.color = r.Pass ? new Color(0.4f, 0.85f, 0.4f) : new Color(0.9f, 0.4f, 0.4f);
-                marker = r.Pass ? "PASS" : "FAIL";
+                color = i == cursor ? Color.yellow : new Color(0.7f, 0.7f, 0.7f);
+                marker = "?";
             }
 
             string prefix = (i == cursor ? "> " : "   ") + (i + 1) + ". [" + marker + "] ";
             string detail = hasResult && !r.Detail.NullOrEmpty() ? "   (" + r.Detail + ")" : "";
-            list.Label(prefix + step.Instruction + detail);
+            string text = prefix + step.Instruction + detail;
+
+            bool showManualButtons = step.Check == null && i == cursor;
+            float btnW = Text.LineHeight;
+            const float gap = 2f;
+            float labelWidth = showManualButtons ? list.ColumnWidth - ((btnW * 2f) + (gap * 2f)) : list.ColumnWidth;
+            float h = Mathf.Max(Text.LineHeight, Text.CalcHeight(text, labelWidth));
+            Rect rowRect = list.GetRect(h);
+
+            GUI.color = color;
+            Widgets.Label(new Rect(rowRect.x, rowRect.y, labelWidth, rowRect.height), text);
+            GUI.color = Color.white;
+
+            if (!showManualButtons)
+            {
+                return;
+            }
+
+            Rect passRect = new Rect(rowRect.xMax - (btnW * 2f) - gap, rowRect.y, btnW, btnW);
+            Rect failRect = new Rect(rowRect.xMax - btnW, rowRect.y, btnW, btnW);
+
+            if (Widgets.ButtonImage(passRect, Widgets.CheckboxOnTex, new Color(0.4f, 0.85f, 0.4f), new Color(0.6f, 1f, 0.6f), true, "Mark this manual step passed and advance"))
+            {
+                MarkManual(i, true);
+            }
+
+            if (Widgets.ButtonImage(failRect, TexButton.CloseXSmall, new Color(0.9f, 0.4f, 0.4f), new Color(1f, 0.6f, 0.6f), true, "Mark this manual step failed and advance"))
+            {
+                MarkManual(i, false);
+            }
+        }
+
+        private void MarkManual(int i, bool pass)
+        {
+            results[i] = pass ? CheckResult.Ok("manual pass") : CheckResult.Fail("manual fail");
+            dumps[i] = suite?.Describe?.Invoke(BuildContext()) ?? "";
+            WriteLog(script!.Name + " - step " + (i + 1) + " [" + (pass ? "PASS" : "FAIL") + "] (manual) " + script.Steps[i].Instruction);
+            cursor = Mathf.Min(i + 1, script.Steps.Count);
         }
 
         private string Summary()

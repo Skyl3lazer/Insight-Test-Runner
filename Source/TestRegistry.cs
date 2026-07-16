@@ -4,8 +4,6 @@ using Verse;
 
 namespace TestRunner
 {
-    // Collects test suites from every mod. Auto-discovers ITestProvider implementors at startup;
-    // mods may also call Register(...) directly (e.g. for dynamically built suites).
     [StaticConstructorOnStartup]
     public static class TestRegistry
     {

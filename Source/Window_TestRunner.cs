@@ -8,10 +8,6 @@ using Verse;
 
 namespace TestRunner
 {
-    // Generic manual step runner. Opened globally on the current map; pick a suite's script, select its
-    // target (per the suite's TargetKind), then advance one step at a time (or Run all) and observe the
-    // game. Steps with a self-check show PASS/FAIL. Run all / Save report write <suite>.json + .log to
-    // persistentDataPath/Insight for external reading.
     public class Window_TestRunner : Window
     {
         private const int BaseSeed = 1234567;
@@ -29,9 +25,7 @@ namespace TestRunner
         private Thing? targetThing;
         private IntVec3 targetCell = IntVec3.Invalid;
 
-        // Per-suite names whose log has already been truncated this game launch. Static, so it resets
-        // when the assembly reloads (i.e. once per launch) - the log overwrites on the launch's first
-        // write and appends within the launch.
+        // Static, so it resets each game launch: the log is truncated on the launch's first write, then appended.
         private static readonly HashSet<string> LogFreshThisLaunch = new HashSet<string>();
 
         public Window_TestRunner()

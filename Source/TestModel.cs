@@ -6,7 +6,6 @@ using Verse;
 
 namespace TestRunner
 {
-    // Result of a step's optional self-check.
     public readonly struct CheckResult
     {
         public readonly bool Pass;
@@ -23,8 +22,6 @@ namespace TestRunner
         public static CheckResult Fail(string detail) => new CheckResult(false, detail);
     }
 
-    // A single manual step: an action driven against the context, what to observe, and an optional
-    // self-check. Check == null means the step is human-judged only (UI/feel, or a manual note).
     public class TestStep
     {
         public readonly string Instruction;
@@ -39,7 +36,6 @@ namespace TestRunner
         }
     }
 
-    // An ordered, named manual scenario.
     public class TestScript
     {
         public readonly string Name;
@@ -52,8 +48,6 @@ namespace TestRunner
         }
     }
 
-    // A mod's group of scripts. TargetKind decides what the runner asks you to select; Describe supplies
-    // the per-mod state dump for logs/reports (null => blank dumps).
     public class TestSuite
     {
         public readonly string Name;
@@ -70,7 +64,6 @@ namespace TestRunner
         }
     }
 
-    // Fluent builders. Consumers do `using static TestRunner.Test;` and write Do/Note/Check/Script.
     public static class Test
     {
         public static TestStep Do(string instruction, Action<TestContext> op) => new TestStep(instruction, op);
@@ -84,8 +77,6 @@ namespace TestRunner
         public static TestScript Script(string name, params TestStep[] steps) => new TestScript(name, steps.ToList());
     }
 
-    // Assertion helpers for step checks. Prefer invariant/relational asserts over exact tuning
-    // constants so tests survive rebalancing.
     public static class Assert
     {
         public static CheckResult True(bool cond, string label) =>

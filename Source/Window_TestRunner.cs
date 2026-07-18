@@ -20,12 +20,16 @@ namespace TestRunner
         private RngMode mode = RngMode.Seeded;
         private readonly Dictionary<int, CheckResult> results = new Dictionary<int, CheckResult>();
         private readonly Dictionary<int, string> dumps = new Dictionary<int, string>();
+        private readonly Dictionary<int, List<CapturedError>> errors = new Dictionary<int, List<CapturedError>>();
         private string? suiteResult;
         private Vector2 stepScroll;
         private Vector2 pickerScroll;
+        private Vector2 diagScroll;
         private float stepsHeight;
         private float pickerHeight;
+        private float diagHeight;
         private int scrolledCursor = -1;
+        private bool diagnosticsOpen;
 
         private Pawn? targetPawn;
         private Thing? targetThing;
@@ -48,6 +52,21 @@ namespace TestRunner
 
         public override void DoWindowContents(Rect inRect)
         {
+            int diagCount = LogCapture.LoadingErrors.Count + LogCapture.OtherErrors.Count;
+            Rect diagBtnRect = new Rect(inRect.xMax - 150f, inRect.y, 150f, 26f);
+            if (Widgets.ButtonText(diagBtnRect, (diagnosticsOpen ? "Back" : "Diagnostics") + (diagCount > 0 ? " (" + diagCount + ")" : "")))
+            {
+                diagnosticsOpen = !diagnosticsOpen;
+            }
+
+            inRect = new Rect(inRect.x, inRect.y + 30f, inRect.width, inRect.height - 30f);
+
+            if (diagnosticsOpen)
+            {
+                DrawDiagnostics(inRect);
+                return;
+            }
+
             if (script == null || suite == null)
             {
                 DrawPickerArea(inRect);
@@ -150,6 +169,47 @@ namespace TestRunner
             GUI.EndScrollView();
         }
 
+        private void DrawDiagnostics(Rect inRect)
+        {
+            Rect viewRect = new Rect(0f, 0f, inRect.width - 16f, Mathf.Max(diagHeight, inRect.height));
+            diagScroll = GUI.BeginScrollView(inRect, diagScroll, viewRect, false, true);
+            Listing_Standard list = new Listing_Standard();
+            list.Begin(new Rect(0f, 0f, viewRect.width, 100000f));
+
+            IReadOnlyList<CapturedError> loading = LogCapture.LoadingErrors;
+            list.Label("Loading Errors (" + loading.Count + ")");
+            DrawErrorList(list, loading);
+
+            list.GapLine();
+
+            IReadOnlyList<CapturedError> other = LogCapture.OtherErrors;
+            list.Label("Other/Idle Errors (" + other.Count + ")");
+            DrawErrorList(list, other);
+
+            diagHeight = list.CurHeight;
+            list.End();
+            GUI.EndScrollView();
+        }
+
+        private static void DrawErrorList(Listing_Standard list, IReadOnlyList<CapturedError> errs)
+        {
+            if (errs.Count == 0)
+            {
+                GUI.color = new Color(0.6f, 0.6f, 0.6f);
+                list.Label("  (none)");
+                GUI.color = Color.white;
+                return;
+            }
+
+            foreach (CapturedError e in errs)
+            {
+                GUI.color = new Color(0.9f, 0.6f, 0.3f);
+                string suffix = e.Count > 1 ? " (x" + e.Count + ")" : "";
+                list.Label("  [" + e.LogType + "] " + e.Message + suffix);
+                GUI.color = Color.white;
+            }
+        }
+
         private float FooterHeight(bool hasTarget)
         {
             float h = 12f;
@@ -229,6 +289,7 @@ namespace TestRunner
                 cursor = 0;
                 results.Clear();
                 dumps.Clear();
+                errors.Clear();
                 suiteResult = null;
                 stepScroll = Vector2.zero;
             }
@@ -240,6 +301,7 @@ namespace TestRunner
                 cursor = 0;
                 results.Clear();
                 dumps.Clear();
+                errors.Clear();
                 suiteResult = null;
                 stepScroll = Vector2.zero;
             }
@@ -280,6 +342,7 @@ namespace TestRunner
                         cursor = 0;
                         results.Clear();
                         dumps.Clear();
+                        errors.Clear();
                         suiteResult = null;
                         stepScroll = Vector2.zero;
                     }
@@ -367,13 +430,22 @@ namespace TestRunner
         {
             TestStep step = script!.Steps[i];
             bool hasResult = results.TryGetValue(i, out CheckResult r);
+            bool hasErrors = errors.TryGetValue(i, out List<CapturedError>? stepErrors) && stepErrors!.Count > 0;
 
             string marker;
             Color color;
             if (hasResult)
             {
-                color = r.Pass ? new Color(0.4f, 0.85f, 0.4f) : new Color(0.9f, 0.4f, 0.4f);
-                marker = r.Pass ? "PASS" : "FAIL";
+                if (r.Pass && hasErrors)
+                {
+                    color = new Color(0.9f, 0.7f, 0.3f);
+                    marker = "WARN";
+                }
+                else
+                {
+                    color = r.Pass ? new Color(0.4f, 0.85f, 0.4f) : new Color(0.9f, 0.4f, 0.4f);
+                    marker = r.Pass ? "PASS" : "FAIL";
+                }
             }
             else if (step.Check != null)
             {
@@ -393,7 +465,8 @@ namespace TestRunner
 
             string prefix = (i == cursor ? "> " : "   ") + (i + 1) + ". [" + marker + "] ";
             string detail = hasResult && !r.Detail.NullOrEmpty() ? "   (" + r.Detail + ")" : "";
-            string text = prefix + step.Instruction + detail;
+            string errSuffix = hasErrors ? "   [" + stepErrors!.Count + " error" + (stepErrors.Count > 1 ? "s" : "") + "]" : "";
+            string text = prefix + step.Instruction + detail + errSuffix;
 
             bool showManualButtons = step.HumanJudged && i == cursor;
             float btnW = Text.LineHeight;
@@ -435,24 +508,36 @@ namespace TestRunner
 
         private string Summary()
         {
-            Tally(out int pass, out int fail, out int pending, out int manual);
-            return string.Format("Checks - PASS {0}  FAIL {1}  pending {2}  |  manual {3}   (rng: {4})",
-                pass, fail, pending, manual, mode);
+            Tally(out int pass, out int warn, out int fail, out int pending, out int manual);
+            return string.Format("Checks - PASS {0}  WARN {1}  FAIL {2}  pending {3}  |  manual {4}   (rng: {5})",
+                pass, warn, fail, pending, manual, mode);
         }
 
-        private void Tally(out int pass, out int fail, out int pending, out int manual)
+        private void Tally(out int pass, out int warn, out int fail, out int pending, out int manual)
         {
-            TallyOf(script!, results, out pass, out fail, out pending, out manual);
+            TallyOf(script!, results, errors, out pass, out warn, out fail, out pending, out manual);
         }
 
-        private static void TallyOf(TestScript sc, Dictionary<int, CheckResult> res, out int pass, out int fail, out int pending, out int manual)
+        private static void TallyOf(TestScript sc, Dictionary<int, CheckResult> res, Dictionary<int, List<CapturedError>> err, out int pass, out int warn, out int fail, out int pending, out int manual)
         {
-            pass = fail = pending = manual = 0;
+            pass = warn = fail = pending = manual = 0;
             for (int i = 0; i < sc.Steps.Count; i++)
             {
                 if (res.TryGetValue(i, out CheckResult r))
                 {
-                    if (r.Pass) pass++; else fail++;
+                    bool hasErrors = err.TryGetValue(i, out List<CapturedError>? e) && e!.Count > 0;
+                    if (!r.Pass)
+                    {
+                        fail++;
+                    }
+                    else if (hasErrors)
+                    {
+                        warn++;
+                    }
+                    else
+                    {
+                        pass++;
+                    }
                 }
                 else if (sc.Steps[i].Check != null)
                 {
@@ -470,6 +555,7 @@ namespace TestRunner
             suiteResult = null;
             results.Clear();
             dumps.Clear();
+            errors.Clear();
             for (int i = 0; i < script!.Steps.Count; i++)
             {
                 RunStep(i);
@@ -488,41 +574,44 @@ namespace TestRunner
             }
 
             List<ScriptRun> runs = new List<ScriptRun>();
-            int aPass = 0, aFail = 0, aPending = 0, aManual = 0;
+            int aPass = 0, aWarn = 0, aFail = 0, aPending = 0, aManual = 0;
 
             foreach (TestScript sc in suite.Scripts)
             {
                 Dictionary<int, CheckResult> res = new Dictionary<int, CheckResult>();
                 Dictionary<int, string> dmp = new Dictionary<int, string>();
+                Dictionary<int, List<CapturedError>> err = new Dictionary<int, List<CapturedError>>();
                 for (int i = 0; i < sc.Steps.Count; i++)
                 {
-                    RunStepCore(sc, i, res, dmp);
+                    RunStepCore(sc, i, res, dmp, err);
                 }
 
-                TallyOf(sc, res, out int p, out int f, out int pend, out int man);
-                aPass += p; aFail += f; aPending += pend; aManual += man;
-                WriteLog(sc.Name + " - PASS " + p + " FAIL " + f + " pending " + pend + " manual " + man);
-                runs.Add(new ScriptRun(sc, res, dmp));
+                TallyOf(sc, res, err, out int p, out int w, out int f, out int pend, out int man);
+                aPass += p; aWarn += w; aFail += f; aPending += pend; aManual += man;
+                WriteLog(sc.Name + " - PASS " + p + " WARN " + w + " FAIL " + f + " pending " + pend + " manual " + man);
+                runs.Add(new ScriptRun(sc, res, dmp, err));
 
                 if (sc == script)
                 {
                     results.Clear();
                     dumps.Clear();
+                    errors.Clear();
                     foreach (KeyValuePair<int, CheckResult> kv in res) results[kv.Key] = kv.Value;
                     foreach (KeyValuePair<int, string> kv in dmp) dumps[kv.Key] = kv.Value;
+                    foreach (KeyValuePair<int, List<CapturedError>> kv in err) errors[kv.Key] = kv.Value;
                     cursor = sc.Steps.Count;
                 }
             }
 
-            suiteResult = string.Format("Run suite - {0} scripts: PASS {1} FAIL {2} pending {3} manual {4} (rng: {5})",
-                runs.Count, aPass, aFail, aPending, aManual, mode);
+            suiteResult = string.Format("Run suite - {0} scripts: PASS {1} WARN {2} FAIL {3} pending {4} manual {5} (rng: {6})",
+                runs.Count, aPass, aWarn, aFail, aPending, aManual, mode);
             WriteLog(suiteResult);
             WriteReportFile(runs);
         }
 
-        private void RunStep(int i) => RunStepCore(script!, i, results, dumps);
+        private void RunStep(int i) => RunStepCore(script!, i, results, dumps, errors);
 
-        private void RunStepCore(TestScript sc, int i, Dictionary<int, CheckResult> res, Dictionary<int, string> dmp)
+        private void RunStepCore(TestScript sc, int i, Dictionary<int, CheckResult> res, Dictionary<int, string> dmp, Dictionary<int, List<CapturedError>> errs)
         {
             if (suite == null || !HasTarget() || i < 0 || i >= sc.Steps.Count)
             {
@@ -545,56 +634,81 @@ namespace TestRunner
             }
 
             string? driftError = null;
-            try
-            {
-                step.Run(ctx);
-            }
-            catch (Exception e)
-            {
-                Log.Error("[Insight] " + suite.Name + " step " + (i + 1) + " threw: " + e);
-                WriteLog("step " + (i + 1) + " THREW: " + e.Message);
-            }
-            finally
-            {
-                if (armed && RandStub.Drift(out string de))
-                {
-                    driftError = de;
-                }
+            string dump;
+            CheckResult? checkResult = null;
 
-                RandStub.Disarm();
-
-                if (pushed)
-                {
-                    Rand.PopState();
-                }
-            }
-
-            string dump = suite.Describe?.Invoke(ctx) ?? "";
-            dmp[i] = dump;
-
-            if (step.Check != null || driftError != null)
+            using (LogCapture.Scope logScope = LogCapture.BeginStep())
             {
-                CheckResult r;
                 try
                 {
-                    r = step.Check != null ? step.Check(ctx) : CheckResult.Ok();
+                    step.Run(ctx);
                 }
                 catch (Exception e)
                 {
-                    r = CheckResult.Fail("check threw: " + e.Message);
+                    Log.Error("[Insight] " + suite.Name + " step " + (i + 1) + " threw: " + e);
+                    WriteLog("step " + (i + 1) + " THREW: " + e.Message);
                 }
-
-                if (driftError != null)
+                finally
                 {
-                    r = CheckResult.Fail("stub drift - " + driftError);
+                    if (armed && RandStub.Drift(out string de))
+                    {
+                        driftError = de;
+                    }
+
+                    RandStub.Disarm();
+
+                    if (pushed)
+                    {
+                        Rand.PopState();
+                    }
                 }
 
+                dump = suite.Describe?.Invoke(ctx) ?? "";
+
+                if (step.Check != null || driftError != null)
+                {
+                    CheckResult r;
+                    try
+                    {
+                        r = step.Check != null ? step.Check(ctx) : CheckResult.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        r = CheckResult.Fail("check threw: " + e.Message);
+                    }
+
+                    if (driftError != null)
+                    {
+                        r = CheckResult.Fail("stub drift - " + driftError);
+                    }
+
+                    checkResult = r;
+                }
+
+                if (logScope.Entries.Count > 0)
+                {
+                    errs[i] = new List<CapturedError>(logScope.Entries);
+                }
+                else
+                {
+                    errs.Remove(i);
+                }
+            }
+
+            dmp[i] = dump;
+            bool hasErrors = errs.TryGetValue(i, out List<CapturedError>? stepErrors) && stepErrors!.Count > 0;
+
+            if (checkResult.HasValue)
+            {
+                CheckResult r = checkResult.Value;
                 res[i] = r;
-                WriteLog(sc.Name + " - step " + (i + 1) + " [" + (r.Pass ? "PASS" : "FAIL") + "] " + step.Instruction + " -> " + r.Detail);
+                string tag = r.Pass ? (hasErrors ? "PASSED_WITH_ERRORS" : "PASS") : "FAIL";
+                WriteLog(sc.Name + " - step " + (i + 1) + " [" + tag + "] " + step.Instruction + " -> " + r.Detail);
             }
             else
             {
-                WriteLog(sc.Name + " - step " + (i + 1) + " (" + step.Instruction + ") -> " + dump);
+                string errSuffix = hasErrors ? " [errors x" + stepErrors!.Count + "]" : "";
+                WriteLog(sc.Name + " - step " + (i + 1) + " (" + step.Instruction + ")" + errSuffix + " -> " + dump);
             }
         }
 
@@ -605,7 +719,7 @@ namespace TestRunner
                 return;
             }
 
-            WriteReportFile(new List<ScriptRun> { new ScriptRun(script, results, dumps) });
+            WriteReportFile(new List<ScriptRun> { new ScriptRun(script, results, dumps, errors) });
         }
 
         private void WriteReportFile(List<ScriptRun> runs)
@@ -615,20 +729,20 @@ namespace TestRunner
                 return;
             }
 
-            int aPass = 0, aFail = 0, aPending = 0, aManual = 0;
+            int aPass = 0, aWarn = 0, aFail = 0, aPending = 0, aManual = 0;
             foreach (ScriptRun run in runs)
             {
-                TallyOf(run.Script, run.Results, out int p, out int f, out int pend, out int man);
-                aPass += p; aFail += f; aPending += pend; aManual += man;
+                TallyOf(run.Script, run.Results, run.Errors, out int p, out int w, out int f, out int pend, out int man);
+                aPass += p; aWarn += w; aFail += f; aPending += pend; aManual += man;
             }
 
             StringBuilder sb = new StringBuilder();
             sb.Append("{\n");
-            sb.Append("  \"suite\": ").Append(J(suite.Name)).Append(",\n");
-            sb.Append("  \"kind\": ").Append(J(suite.TargetKind.ToString())).Append(",\n");
-            sb.Append("  \"target\": ").Append(J(TargetLabel())).Append(",\n");
-            sb.Append("  \"rngMode\": ").Append(J(mode.ToString())).Append(",\n");
-            sb.Append("  \"summary\": { \"pass\": ").Append(aPass).Append(", \"fail\": ").Append(aFail)
+            sb.Append("  \"suite\": ").Append(JsonUtil.Escape(suite.Name)).Append(",\n");
+            sb.Append("  \"kind\": ").Append(JsonUtil.Escape(suite.TargetKind.ToString())).Append(",\n");
+            sb.Append("  \"target\": ").Append(JsonUtil.Escape(TargetLabel())).Append(",\n");
+            sb.Append("  \"rngMode\": ").Append(JsonUtil.Escape(mode.ToString())).Append(",\n");
+            sb.Append("  \"summary\": { \"pass\": ").Append(aPass).Append(", \"warn\": ").Append(aWarn).Append(", \"fail\": ").Append(aFail)
               .Append(", \"pending\": ").Append(aPending).Append(", \"manual\": ").Append(aManual).Append(" },\n");
             sb.Append("  \"scripts\": [\n");
 
@@ -650,16 +764,18 @@ namespace TestRunner
             {
                 Log.Error("[Insight] report write failed: " + e);
             }
+
+            LogCapture.WriteDiagnosticsReport(OutputDirPath());
         }
 
         private static void AppendScript(StringBuilder sb, ScriptRun run)
         {
             TestScript sc = run.Script;
-            TallyOf(sc, run.Results, out int pass, out int fail, out int pending, out int manual);
+            TallyOf(sc, run.Results, run.Errors, out int pass, out int warn, out int fail, out int pending, out int manual);
 
             sb.Append("    {\n");
-            sb.Append("      \"script\": ").Append(J(sc.Name)).Append(",\n");
-            sb.Append("      \"summary\": { \"pass\": ").Append(pass).Append(", \"fail\": ").Append(fail)
+            sb.Append("      \"script\": ").Append(JsonUtil.Escape(sc.Name)).Append(",\n");
+            sb.Append("      \"summary\": { \"pass\": ").Append(pass).Append(", \"warn\": ").Append(warn).Append(", \"fail\": ").Append(fail)
               .Append(", \"pending\": ").Append(pending).Append(", \"manual\": ").Append(manual).Append(" },\n");
             sb.Append("      \"steps\": [\n");
 
@@ -668,9 +784,11 @@ namespace TestRunner
                 TestStep step = sc.Steps[i];
                 string status;
                 string detail = "";
+                bool hasErrors = run.Errors.TryGetValue(i, out List<CapturedError>? stepErrors) && stepErrors!.Count > 0;
+
                 if (run.Results.TryGetValue(i, out CheckResult r))
                 {
-                    status = r.Pass ? "PASS" : "FAIL";
+                    status = r.Pass ? (hasErrors ? "PASSED_WITH_ERRORS" : "PASS") : "FAIL";
                     detail = r.Detail;
                 }
                 else if (step.Check != null)
@@ -687,11 +805,25 @@ namespace TestRunner
                 }
 
                 sb.Append("        { \"n\": ").Append(i + 1)
-                  .Append(", \"status\": ").Append(J(status))
-                  .Append(", \"instruction\": ").Append(J(step.Instruction))
-                  .Append(", \"detail\": ").Append(J(detail))
-                  .Append(", \"dump\": ").Append(J(run.Dumps.TryGetValue(i, out string d) ? d : ""))
-                  .Append(" }");
+                  .Append(", \"status\": ").Append(JsonUtil.Escape(status))
+                  .Append(", \"instruction\": ").Append(JsonUtil.Escape(step.Instruction))
+                  .Append(", \"detail\": ").Append(JsonUtil.Escape(detail))
+                  .Append(", \"dump\": ").Append(JsonUtil.Escape(run.Dumps.TryGetValue(i, out string d) ? d : ""))
+                  .Append(", \"errors\": [");
+
+                if (hasErrors)
+                {
+                    for (int e = 0; e < stepErrors!.Count; e++)
+                    {
+                        CapturedError ce = stepErrors[e];
+                        sb.Append("{ \"message\": ").Append(JsonUtil.Escape(ce.Message))
+                          .Append(", \"stackTrace\": ").Append(JsonUtil.Escape(ce.StackTrace))
+                          .Append(", \"count\": ").Append(ce.Count).Append(" }");
+                        sb.Append(e < stepErrors.Count - 1 ? ", " : "");
+                    }
+                }
+
+                sb.Append("] }");
                 sb.Append(i < sc.Steps.Count - 1 ? ",\n" : "\n");
             }
 
@@ -704,12 +836,14 @@ namespace TestRunner
             public readonly TestScript Script;
             public readonly Dictionary<int, CheckResult> Results;
             public readonly Dictionary<int, string> Dumps;
+            public readonly Dictionary<int, List<CapturedError>> Errors;
 
-            public ScriptRun(TestScript script, Dictionary<int, CheckResult> results, Dictionary<int, string> dumps)
+            public ScriptRun(TestScript script, Dictionary<int, CheckResult> results, Dictionary<int, string> dumps, Dictionary<int, List<CapturedError>> errors)
             {
                 Script = script;
                 Results = results;
                 Dumps = dumps;
+                Errors = errors;
             }
         }
 
@@ -756,31 +890,6 @@ namespace TestRunner
             }
 
             return s;
-        }
-
-        private static string J(string s)
-        {
-            if (s == null)
-            {
-                return "\"\"";
-            }
-
-            StringBuilder b = new StringBuilder("\"");
-            foreach (char c in s)
-            {
-                switch (c)
-                {
-                    case '"': b.Append("\\\""); break;
-                    case '\\': b.Append("\\\\"); break;
-                    case '\n': b.Append("\\n"); break;
-                    case '\r': b.Append("\\r"); break;
-                    case '\t': b.Append("\\t"); break;
-                    default: b.Append(c); break;
-                }
-            }
-
-            b.Append("\"");
-            return b.ToString();
         }
 
         private static Rect Col(Rect row, float w, int index) => new Rect(row.x + (w + 4f) * index, row.y, w, row.height);

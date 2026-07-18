@@ -11,6 +11,8 @@ namespace TestRunner
 
         static TestRegistry()
         {
+            LogCapture.Init();
+
             foreach (Type t in GenTypes.AllTypes)
             {
                 if (t.IsAbstract || t.IsInterface || !typeof(ITestProvider).IsAssignableFrom(t))
@@ -25,14 +27,16 @@ namespace TestRunner
                     {
                         Register(suite);
                     }
+
+                    LogCapture.RegisterSuppressions(provider.SuppressedLogPatterns);
                 }
                 catch (Exception e)
                 {
-                    Log.Error("[TestRunner] provider " + t + " failed: " + e);
+                    Log.Error("[Insight] provider " + t + " failed: " + e);
                 }
             }
 
-            Log.Message("[TestRunner] registered " + Suites.Count + " test suite(s).");
+            Log.Message("[Insight] registered " + Suites.Count + " test suite(s).");
         }
 
         public static IReadOnlyList<TestSuite> AllSuites => Suites;

@@ -32,6 +32,13 @@ A complete, self-contained recipe for building an Insight test kit for a RimWorl
   and `Stubbed` (a step's `.Stub(...)` values are forced; unplanned steps/calls fall back to seeded).
 - Insight discovers your suite automatically (you implement `ITestProvider`), shows it in the runner,
   has the tester select the target, drives the steps, and writes `Insight\<suite>.json` + `.log`.
+- Insight also captures red errors (`Log.Error`/exceptions, not warnings) firing anywhere during the
+  session and buckets them into **Loading Errors** (from game/mod/def load, before any suite ran),
+  **Test-Attributed Errors** (whatever step was active), and **Other/Idle Errors** (everything else) -
+  shown in the runner's **Diagnostics** panel and written to `Insight\_diagnostics.json`. A step that
+  passes its check but had an error attached still shows `PASS`; it just gets `PASSED_WITH_ERRORS`
+  as its report status instead of `PASS`, so pass/fail meaning is never changed by this. See
+  `SuppressedLogPatterns` in section 4 to silence known-noise errors.
 
 Golden rule: **drive the target mod through its public API only.** If a capability you need is not
 public, add a thin public method to the target mod (or an ops class in the kit that calls existing
@@ -167,6 +174,7 @@ Implement `ITestProvider` (public, parameterless ctor). Insight finds it automat
 bare (`Do`, `Note`, `Check`, `Script`).
 
 ```csharp
+using System;
 using System.Collections.Generic;
 using TestRunner;
 using Verse;
@@ -181,6 +189,10 @@ namespace <Target>TestKit
             // Pick the TargetKind your scripts need: None / Pawn / Building / Item / Cell.
             yield return new TestSuite("<Target>", TargetKind.Pawn, Scripts, <Target>Ops.Describe);
         }
+
+        // Optional: regex patterns matched against captured red-error messages to silence known
+        // noise (e.g. an unrelated mod's own log spam). Return an empty array if you have none.
+        public IEnumerable<string> SuppressedLogPatterns => Array.Empty<string>();
 
         private static readonly List<TestScript> Scripts = new List<TestScript>
         {
@@ -246,6 +258,10 @@ runs; other modes ignore it:
 `TestSuite(string name, TargetKind targetKind, List<TestScript> scripts, Func<TestContext,string>? describe = null)`
 - `describe` is the per-step state dump; pass `null` for no dumps.
 
+`ITestProvider.SuppressedLogPatterns` (`IEnumerable<string>`) - optional regex patterns; a captured
+red error whose message matches any pattern from any registered kit is silenced everywhere (loading,
+test-attributed, and other/idle alike), not just for that kit's own tests.
+
 ---
 
 ## 6. Build order and running
@@ -268,9 +284,15 @@ destructive scripts, so pick a disposable target). Run suite writes the combined
 aggregate tally in the window, and logs it. Read `Insight\<suite>.json` (and `.log`) in the LocalLow
 RimWorld folder, and the target's tab for the human-judged steps.
 
-The report is suite-level: top-level `suite` / `kind` / `target` / `rngMode`, an aggregate `summary`,
-and a `scripts` array - each entry has its own `script` name, `summary`, and `steps`. A single-script
-run writes the same shape with one entry; Run suite writes them all. The file overwrites each run.
+The report is suite-level: top-level `suite` / `kind` / `target` / `rngMode`, an aggregate `summary`
+(`pass` / `warn` / `fail` / `pending` / `manual`), and a `scripts` array - each entry has its own
+`script` name, `summary`, and `steps`; each step carries an `errors` array (empty if none) alongside
+its `status`, which is `PASSED_WITH_ERRORS` instead of `PASS` when a captured error was attached. A
+single-script run writes the same shape with one entry; Run suite writes them all. The file
+overwrites each run.
+
+`Insight\_diagnostics.json` holds the session-wide `loadingErrors` and `otherErrors` buckets (each
+entry: `type`, `message`, `stackTrace`, `count`), rewritten alongside every suite report.
 
 ---
 

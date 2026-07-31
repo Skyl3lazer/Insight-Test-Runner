@@ -29,15 +29,17 @@ Dev tool - not for the Workshop. Enable it in your mod list; consuming test kits
 3. Pick a suite's script; if it targets a pawn/building/item/cell, hit **Select target** and click one, then step through:
    - **Run & Next** runs the current step and evaluates its check; **Run script** runs the whole script.
    - Human-judged `Note` steps show checkmark / X icon buttons on the active row - click to record PASS/FAIL and advance. Action-only `Do` steps (setup/teardown) just run, no buttons.
-   - **Run suite** runs every script in the suite in order on the selected target, writes one combined report, and shows the aggregate PASS/FAIL/pending/manual tally in the window and the log.
+   - **Run suite** runs every script in the suite in order on the selected target, writes one combined report, and shows the aggregate PASS/WARN/FAIL/SKIP/pending/manual tally in the window and the log.
+   - A check can report **SKIP** (`CheckResult.Skip`) when its subject is not applicable (DLC off, optional mod missing); skips count separately from passes everywhere. A step whose op **throws** is recorded as a FAIL even if it has no check.
    - **Prev / Restart / Suites** navigate. **Save report** writes without a full run.
    - **RNG mode** (Real / Seeded / Stubbed): Real samples variance, Seeded makes outcomes repeat run
      to run, Stubbed forces the `Rand` results a step declares via `.Stub(...)` so a specific branch
      is exercised deterministically (unused or extra rolls fail the step).
 4. Output lands in `%USERPROFILE%\AppData\LocalLow\Ludeon Studios\RimWorld by Ludeon Studios\Insight\`:
    - `<suite>.json` - latest run, structured (for tooling): suite-level, with an aggregate `summary`
-     and a `scripts` array (each with its own summary + steps). Run suite fills every script; a
-     single-script run writes one entry.
+     (`pass`/`warn`/`fail`/`skipped`/`pending`/`manual`) and a `scripts` array (each with its own
+     summary + steps; step `status` is `PASS`/`FAIL`/`SKIPPED`/`PASSED_WITH_ERRORS`/`MANUAL`/
+     `PENDING`/`ACTION`). Run suite fills every script; a single-script run writes one entry.
    - `<suite>.log` - timestamped step narration; overwrites on each game launch, appends within it.
    Genuine exceptions also surface in `Player.log`.
 
@@ -55,4 +57,4 @@ worked example. It assumes no prior context.
 - `TestSuite(name, TargetKind, List<TestScript> scripts, Func<TestContext,string>? describe)`
 - `TestScript` / `TestStep` and the `Test.Do/Note/Check/Script` builders (`Do(op)` = action-only, `Do(op,check)`/`Check` = auto, `Note` = human-judged); `TestStep.Stub(...)` forces `Rand` results.
 - `RngMode` (Real/Seeded/Stubbed) + `StubBuilder` (`.Chance/.Value/.Range/.RangeInt`).
-- `CheckResult` and the `Assert` helpers.
+- `CheckResult` (`Ok` / `Fail` / `Skip`) and the `Assert` helpers.

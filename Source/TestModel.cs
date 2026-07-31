@@ -9,17 +9,29 @@ namespace TestRunner
     public readonly struct CheckResult
     {
         public readonly bool Pass;
+        public readonly bool Skipped;
         public readonly string Detail;
 
+        // Skipped results keep Pass=true so consumers unaware of skips never count them as failures.
         public CheckResult(bool pass, string detail)
         {
             Pass = pass;
+            Skipped = false;
+            Detail = detail;
+        }
+
+        private CheckResult(bool pass, bool skipped, string detail)
+        {
+            Pass = pass;
+            Skipped = skipped;
             Detail = detail;
         }
 
         public static CheckResult Ok(string detail = "") => new CheckResult(true, detail);
 
         public static CheckResult Fail(string detail) => new CheckResult(false, detail);
+
+        public static CheckResult Skip(string detail) => new CheckResult(true, true, detail);
     }
 
     public class TestStep

@@ -18,12 +18,15 @@ A complete, self-contained recipe for building an Insight test kit for a RimWorl
 - A **script** (`TestScript`) = a name + an ordered list of **steps**.
 - A **step** (`TestStep`) is one of four kinds by how it gets its verdict:
   - **auto-checked** (`Do(instr, op, check)` / `Check(instr, check)`) - runs, then a `CheckResult`
-    decides PASS/FAIL.
+    decides PASS/FAIL, or reports SKIP (`CheckResult.Skip`) when a precondition such as a DLC or an
+    optional mod is absent.
   - **human-judged** (`Note(instr)`) - the runner shows pass/fail (checkmark / X) buttons on the
     active row; the tester records the verdict (counts in the tally + report). To judge the result of
     an action, put the action in a preceding `Do(instr, op)` step and the `Note` right after it.
   - **action-only** (`Do(instr, op)`) - runs its op with **no verdict**: setup, teardown, state
-    mutation. No buttons, not counted as pass/fail/pending/manual (report status `ACTION`).
+    mutation. No buttons, not counted as pass/fail/pending/manual (report status `ACTION`). If the
+    op throws, the step is recorded as a FAIL (`op threw: ...`) so a broken setup step can never
+    leave an all-green tally.
   A step may also carry an optional **stub plan** (`.Stub(...)`) that forces specific `Rand` results.
 - A **`TestContext`** is handed to every step: `Map` (always), the selected target for the kind -
   `ctx.Pawn`, `ctx.Thing` (building/item), or `ctx.Cell` - and `ctx.Rng` (the active `RngMode`:
@@ -242,6 +245,11 @@ Assertions (`Assert` static class) - each returns a `CheckResult`:
 - `All(params CheckResult[] results)` - passes only if all pass; details concatenated.
 
 For custom logic a check returns `CheckResult.Ok("detail")` / `CheckResult.Fail("detail")` directly.
+When the thing under test is not applicable in this game (DLC off, optional mod missing), return
+`CheckResult.Skip("detail")` instead of `Ok` - it shows as SKIP in the runner, counts in the
+`skipped` tally, and lands in the report as status `SKIPPED`, so a reader can tell "verified" from
+"not applicable". If a step's op throws, its check is not evaluated (the state is stale); the step
+fails as `op threw: ...`.
 
 Forcing RNG (`RngMode.Stubbed` only) - attach a plan to a step and it is applied while that step's op
 runs; other modes ignore it:
@@ -285,9 +293,11 @@ aggregate tally in the window, and logs it. Read `Insight\<suite>.json` (and `.l
 RimWorld folder, and the target's tab for the human-judged steps.
 
 The report is suite-level: top-level `suite` / `kind` / `target` / `rngMode`, an aggregate `summary`
-(`pass` / `warn` / `fail` / `pending` / `manual`), and a `scripts` array - each entry has its own
-`script` name, `summary`, and `steps`; each step carries an `errors` array (empty if none) alongside
-its `status`, which is `PASSED_WITH_ERRORS` instead of `PASS` when a captured error was attached. A
+(`pass` / `warn` / `fail` / `skipped` / `pending` / `manual`), and a `scripts` array - each entry has
+its own `script` name, `summary`, and `steps`; each step carries an `errors` array (empty if none)
+alongside its `status`: `PASS`, `FAIL`, `SKIPPED` (the check returned `CheckResult.Skip`), or
+`PASSED_WITH_ERRORS` instead of `PASS` when a captured error was attached. A step whose op threw is a
+`FAIL` even if it declared no check. A
 single-script run writes the same shape with one entry; Run suite writes them all. The file
 overwrites each run.
 

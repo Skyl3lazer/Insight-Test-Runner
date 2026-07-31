@@ -436,7 +436,12 @@ namespace TestRunner
             Color color;
             if (hasResult)
             {
-                if (r.Pass && hasErrors)
+                if (r.Skipped)
+                {
+                    color = new Color(0.55f, 0.7f, 0.85f);
+                    marker = "SKIP";
+                }
+                else if (r.Pass && hasErrors)
                 {
                     color = new Color(0.9f, 0.7f, 0.3f);
                     marker = "WARN";
@@ -508,25 +513,29 @@ namespace TestRunner
 
         private string Summary()
         {
-            Tally(out int pass, out int warn, out int fail, out int pending, out int manual);
-            return string.Format("Checks - PASS {0}  WARN {1}  FAIL {2}  pending {3}  |  manual {4}   (rng: {5})",
-                pass, warn, fail, pending, manual, mode);
+            Tally(out int pass, out int warn, out int fail, out int skip, out int pending, out int manual);
+            return string.Format("Checks - PASS {0}  WARN {1}  FAIL {2}  SKIP {3}  pending {4}  |  manual {5}   (rng: {6})",
+                pass, warn, fail, skip, pending, manual, mode);
         }
 
-        private void Tally(out int pass, out int warn, out int fail, out int pending, out int manual)
+        private void Tally(out int pass, out int warn, out int fail, out int skip, out int pending, out int manual)
         {
-            TallyOf(script!, results, errors, out pass, out warn, out fail, out pending, out manual);
+            TallyOf(script!, results, errors, out pass, out warn, out fail, out skip, out pending, out manual);
         }
 
-        private static void TallyOf(TestScript sc, Dictionary<int, CheckResult> res, Dictionary<int, List<CapturedError>> err, out int pass, out int warn, out int fail, out int pending, out int manual)
+        private static void TallyOf(TestScript sc, Dictionary<int, CheckResult> res, Dictionary<int, List<CapturedError>> err, out int pass, out int warn, out int fail, out int skip, out int pending, out int manual)
         {
-            pass = warn = fail = pending = manual = 0;
+            pass = warn = fail = skip = pending = manual = 0;
             for (int i = 0; i < sc.Steps.Count; i++)
             {
                 if (res.TryGetValue(i, out CheckResult r))
                 {
                     bool hasErrors = err.TryGetValue(i, out List<CapturedError>? e) && e!.Count > 0;
-                    if (!r.Pass)
+                    if (r.Skipped)
+                    {
+                        skip++;
+                    }
+                    else if (!r.Pass)
                     {
                         fail++;
                     }
@@ -574,7 +583,7 @@ namespace TestRunner
             }
 
             List<ScriptRun> runs = new List<ScriptRun>();
-            int aPass = 0, aWarn = 0, aFail = 0, aPending = 0, aManual = 0;
+            int aPass = 0, aWarn = 0, aFail = 0, aSkip = 0, aPending = 0, aManual = 0;
 
             foreach (TestScript sc in suite.Scripts)
             {
@@ -586,9 +595,9 @@ namespace TestRunner
                     RunStepCore(sc, i, res, dmp, err);
                 }
 
-                TallyOf(sc, res, err, out int p, out int w, out int f, out int pend, out int man);
-                aPass += p; aWarn += w; aFail += f; aPending += pend; aManual += man;
-                WriteLog(sc.Name + " - PASS " + p + " WARN " + w + " FAIL " + f + " pending " + pend + " manual " + man);
+                TallyOf(sc, res, err, out int p, out int w, out int f, out int s, out int pend, out int man);
+                aPass += p; aWarn += w; aFail += f; aSkip += s; aPending += pend; aManual += man;
+                WriteLog(sc.Name + " - PASS " + p + " WARN " + w + " FAIL " + f + " SKIP " + s + " pending " + pend + " manual " + man);
                 runs.Add(new ScriptRun(sc, res, dmp, err));
 
                 if (sc == script)
@@ -603,8 +612,8 @@ namespace TestRunner
                 }
             }
 
-            suiteResult = string.Format("Run suite - {0} scripts: PASS {1} WARN {2} FAIL {3} pending {4} manual {5} (rng: {6})",
-                runs.Count, aPass, aWarn, aFail, aPending, aManual, mode);
+            suiteResult = string.Format("Run suite - {0} scripts: PASS {1} WARN {2} FAIL {3} SKIP {4} pending {5} manual {6} (rng: {7})",
+                runs.Count, aPass, aWarn, aFail, aSkip, aPending, aManual, mode);
             WriteLog(suiteResult);
             WriteReportFile(runs);
         }
@@ -634,6 +643,7 @@ namespace TestRunner
             }
 
             string? driftError = null;
+            Exception? opError = null;
             string dump;
             CheckResult? checkResult = null;
 
@@ -645,6 +655,7 @@ namespace TestRunner
                 }
                 catch (Exception e)
                 {
+                    opError = e;
                     Log.Error("[Insight] " + suite.Name + " step " + (i + 1) + " threw: " + e);
                     WriteLog("step " + (i + 1) + " THREW: " + e.Message);
                 }
@@ -665,16 +676,24 @@ namespace TestRunner
 
                 dump = suite.Describe?.Invoke(ctx) ?? "";
 
-                if (step.Check != null || driftError != null)
+                if (step.Check != null || driftError != null || opError != null)
                 {
                     CheckResult r;
-                    try
+                    if (opError != null)
                     {
-                        r = step.Check != null ? step.Check(ctx) : CheckResult.Ok();
+                        // Don't evaluate the check against the stale state a throwing op left behind.
+                        r = CheckResult.Fail("op threw: " + opError.Message);
                     }
-                    catch (Exception e)
+                    else
                     {
-                        r = CheckResult.Fail("check threw: " + e.Message);
+                        try
+                        {
+                            r = step.Check != null ? step.Check(ctx) : CheckResult.Ok();
+                        }
+                        catch (Exception e)
+                        {
+                            r = CheckResult.Fail("check threw: " + e.Message);
+                        }
                     }
 
                     if (driftError != null)
@@ -702,7 +721,7 @@ namespace TestRunner
             {
                 CheckResult r = checkResult.Value;
                 res[i] = r;
-                string tag = r.Pass ? (hasErrors ? "PASSED_WITH_ERRORS" : "PASS") : "FAIL";
+                string tag = r.Skipped ? "SKIP" : r.Pass ? (hasErrors ? "PASSED_WITH_ERRORS" : "PASS") : "FAIL";
                 WriteLog(sc.Name + " - step " + (i + 1) + " [" + tag + "] " + step.Instruction + " -> " + r.Detail);
             }
             else
@@ -729,11 +748,11 @@ namespace TestRunner
                 return;
             }
 
-            int aPass = 0, aWarn = 0, aFail = 0, aPending = 0, aManual = 0;
+            int aPass = 0, aWarn = 0, aFail = 0, aSkip = 0, aPending = 0, aManual = 0;
             foreach (ScriptRun run in runs)
             {
-                TallyOf(run.Script, run.Results, run.Errors, out int p, out int w, out int f, out int pend, out int man);
-                aPass += p; aWarn += w; aFail += f; aPending += pend; aManual += man;
+                TallyOf(run.Script, run.Results, run.Errors, out int p, out int w, out int f, out int s, out int pend, out int man);
+                aPass += p; aWarn += w; aFail += f; aSkip += s; aPending += pend; aManual += man;
             }
 
             StringBuilder sb = new StringBuilder();
@@ -743,6 +762,7 @@ namespace TestRunner
             sb.Append("  \"target\": ").Append(JsonUtil.Escape(TargetLabel())).Append(",\n");
             sb.Append("  \"rngMode\": ").Append(JsonUtil.Escape(mode.ToString())).Append(",\n");
             sb.Append("  \"summary\": { \"pass\": ").Append(aPass).Append(", \"warn\": ").Append(aWarn).Append(", \"fail\": ").Append(aFail)
+              .Append(", \"skipped\": ").Append(aSkip)
               .Append(", \"pending\": ").Append(aPending).Append(", \"manual\": ").Append(aManual).Append(" },\n");
             sb.Append("  \"scripts\": [\n");
 
@@ -771,11 +791,12 @@ namespace TestRunner
         private static void AppendScript(StringBuilder sb, ScriptRun run)
         {
             TestScript sc = run.Script;
-            TallyOf(sc, run.Results, run.Errors, out int pass, out int warn, out int fail, out int pending, out int manual);
+            TallyOf(sc, run.Results, run.Errors, out int pass, out int warn, out int fail, out int skip, out int pending, out int manual);
 
             sb.Append("    {\n");
             sb.Append("      \"script\": ").Append(JsonUtil.Escape(sc.Name)).Append(",\n");
             sb.Append("      \"summary\": { \"pass\": ").Append(pass).Append(", \"warn\": ").Append(warn).Append(", \"fail\": ").Append(fail)
+              .Append(", \"skipped\": ").Append(skip)
               .Append(", \"pending\": ").Append(pending).Append(", \"manual\": ").Append(manual).Append(" },\n");
             sb.Append("      \"steps\": [\n");
 
@@ -788,7 +809,7 @@ namespace TestRunner
 
                 if (run.Results.TryGetValue(i, out CheckResult r))
                 {
-                    status = r.Pass ? (hasErrors ? "PASSED_WITH_ERRORS" : "PASS") : "FAIL";
+                    status = r.Skipped ? "SKIPPED" : r.Pass ? (hasErrors ? "PASSED_WITH_ERRORS" : "PASS") : "FAIL";
                     detail = r.Detail;
                 }
                 else if (step.Check != null)

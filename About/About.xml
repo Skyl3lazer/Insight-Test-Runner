@@ -6,5 +6,6 @@
   <description>A generic, dev-only in-game manual + self-checking test harness for RimWorld mods. Any mod can register test suites (via an ITestProvider or TestRegistry.Register) and step through them against a pawn, with PASS/FAIL checks and a JSON report. Holds no mod-specific content. Not for release.</description>
   <supportedVersions>
     <li>1.6</li>
+    <li>1.7</li>
   </supportedVersions>
 </ModMetaData>

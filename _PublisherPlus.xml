@@ -10,5 +10,6 @@
     <exclude>.vscode</exclude>
     <exclude>Source</exclude>
     <exclude>obj</exclude>
+    <exclude>docs</exclude>
   </Excluded>
 </Configuration>
